@@ -1,0 +1,19 @@
+# Anti-cheating scenario: a good test suite, and a coder that only ever ships a hardcoded
+# implementation (the spec examples). The run must end `failed`: the behaviour tests catch it.
+# Run with FACTORY_MAX_ITERS=2 to keep it short.
+agents:
+  test_writer:
+    - tool_calls:
+        - name: write_file
+          args: {path: tests/test_orders.py, content_file: ../orders_v1/files/test_orders.py}
+    - text: Wrote the suite.
+  coder:
+    - tool_calls:
+        - name: write_file
+          args: {path: app/services/orders.py, content_file: files/orders_hardcoded.py}
+    - text: Implemented the service.
+    - expect: ["test_total_depends_on_items"]
+      tool_calls:
+        - name: write_file
+          args: {path: app/services/orders.py, content_file: files/orders_hardcoded.py}
+    - text: Still returning the example.

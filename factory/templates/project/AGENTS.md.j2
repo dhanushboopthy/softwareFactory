@@ -1,0 +1,30 @@
+# AGENTS.md — rules for agents working on this generated project
+
+This project was scaffolded by API Factory from `openapi.yaml` ({{ title }} v{{ api_version }}).
+The spec is the source of truth. Anything you write is verified by real tools; claims are ignored.
+
+## Layout
+| Path | Owner | You may |
+|---|---|---|
+| `openapi.yaml` | human | read only |
+| `app/models.py` | generated from the spec | read only; import as `from app import models` |
+| `app/routes/*.py` | generated, coder may edit | keep paths, status codes and response models as the spec says |
+| `app/services/*.py` | coder | implement the business logic here |
+| `app/db.py` | coder | define SQLAlchemy ORM models (subclass `Base`), use `session_scope()` |
+| `app/main.py` | coder | app wiring; keep the router includes |
+| `tests/conftest.py` | generated | read only; provides the `client` fixture with a fresh DB per test |
+| `tests/test_*.py` | test writer | read only for the coder |
+| `client/` | generated SDK | read only |
+
+## Rules
+1. Implement behaviour from the spec descriptions. Never special-case test inputs or return
+   hardcoded/example data; tests use varied inputs and read data back.
+2. Persist data with SQLAlchemy in SQLite via `app.db`. No in-memory globals for state.
+3. Responses must validate against the spec schemas. Timestamps are timezone-aware (UTC);
+   SQLite drops tzinfo, so re-attach UTC when reading.
+4. Missing resources: raise `fastapi.HTTPException(status_code=404, detail="...")`.
+5. Validation errors (422) come from the Pydantic models in `app.models`; do not weaken them.
+6. Forbidden: `eval`, `exec`, `subprocess`, `os.system`, `importlib`, skipping tests,
+   `# type: ignore` spam, network calls. Writes outside your allowed paths are rejected.
+7. Code must pass: `ruff check`, `mypy --strict` (app/), `bandit`, `pytest`, and Schemathesis
+   contract tests against the running server.

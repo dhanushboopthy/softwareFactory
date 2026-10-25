@@ -1,0 +1,21 @@
+"""Deliberately hardcoded implementation used by the anti-cheating probe.
+
+Every operation returns the example from its spec response, ignoring inputs and storage. A test
+suite that passes against this implementation is too weak and is sent back to the test writer.
+"""
+
+from typing import Any  # noqa: F401
+
+from app import models  # noqa: F401
+{%- for op in ops %}
+
+
+def {{ op.func_name }}(*args: Any, **kwargs: Any) -> Any:
+{%- if op.example_literal is none %}
+    raise NotImplementedError({{ op.func_name | tojson }})
+{%- elif op.return_model_expr %}
+    return {{ op.return_model_expr }}
+{%- else %}
+    return {{ op.example_literal }}
+{%- endif %}
+{%- endfor %}

@@ -1,0 +1,11 @@
+def {{ op.func_name }}({{ op.service_params }}) -> {{ op.return_type }}:
+    """{{ op.label }}{% if op.summary %}: {{ op.summary }}{% endif %}
+{% if op.description %}
+{{ op.description | trim | indent(4, first=True) }}
+{% endif %}
+    Responses:
+{%- for r in op.responses %}
+        {{ r.status }}: {{ r.description }}
+{%- endfor %}
+    """
+    raise NotImplementedError({{ op.func_name | tojson }})

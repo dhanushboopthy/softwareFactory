@@ -1,0 +1,32 @@
+Attempt {{ attempt }} of {{ max_attempts }}. Write the behaviour tests for these API tags: {{ modules | join(", ") }}.
+{% if spec_changes %}
+
+## Spec changes since the previous build
+This is an incremental build; the existing tests passed against the previous implementation. Add tests for these changes and update existing tests only where the change requires it (e.g. a new required field in a request body).
+{% for c in spec_changes %}
+- {{ c }}
+{% endfor %}
+{% endif %}
+{% if feedback %}
+
+## Your previous attempt was rejected by the harness
+```
+{{ feedback }}
+```
+{% endif %}
+
+## AGENTS.md
+{{ agents_md }}
+
+## openapi.yaml
+```yaml
+{{ spec }}
+```
+
+{% for path, content in files.items() %}
+### {{ path }}
+```python
+{{ content }}
+```
+
+{% endfor %}

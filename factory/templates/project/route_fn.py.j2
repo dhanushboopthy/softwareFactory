@@ -1,0 +1,10 @@
+@router.{{ op.method }}(
+    {{ op.path | tojson }},
+    status_code={{ op.success_status }},
+    response_model={{ op.return_type }},
+    operation_id={{ op.operation_id | tojson }},
+    responses={{ op.error_responses }},
+)
+def {{ op.func_name }}({{ op.route_params }}) -> {{ op.return_type }}:
+    """{{ op.summary or op.label }}"""
+    return service.{{ op.func_name }}({{ op.call_args }})

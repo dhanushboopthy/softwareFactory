@@ -1,0 +1,46 @@
+# Scripted agent run for specs/orders.yaml. Exercises, in order:
+#   test writer: tries to read the implementation (blocked), writes a weak suite (rejected by the
+#                quality gates), then writes a proper suite after receiving the gate feedback;
+#   coder:       tries to edit the tests (blocked), ships a bug (total ignores qty), then fixes it
+#                after receiving the pytest failure.
+# `expect` asserts the harness really sent that feedback to the "model".
+agents:
+  test_writer:
+    # attempt 1
+    - tool_calls:
+        - name: read_file
+          args: {path: app/services/orders.py}
+        - name: list_files
+          args: {directory: tests}
+    - tool_calls:
+        - name: write_file
+          args: {path: tests/test_orders.py, content_file: files/test_orders_weak.py}
+    - text: Wrote tests/test_orders.py.
+    # attempt 2: must have received the gate feedback
+    - expect: ["NOT caught", "varied inputs"]
+      tool_calls:
+        - name: write_file
+          args: {path: tests/test_orders.py, content_file: files/test_orders.py}
+    - text: Rewrote the suite with stateful and parametrised tests.
+  coder:
+    # iteration 1
+    - expect: ["Not implemented"]
+      tool_calls:
+        - name: write_file
+          args:
+            path: tests/test_orders.py
+            content: "def test_nothing() -> None:\n    pass\n"
+        - name: write_file
+          args: {path: app/db.py, content_file: files/db.py}
+        - name: write_file
+          args: {path: app/services/orders.py, content_file: files/orders_buggy.py}
+    - text: Added ORM models and implemented the orders service.
+    # iteration 2: must have received the failing total tests
+    - expect: ["test_total_depends_on_items"]
+      tool_calls:
+        - name: read_file
+          args: {path: app/services/orders.py}
+    - tool_calls:
+        - name: write_file
+          args: {path: app/services/orders.py, content_file: files/orders.py}
+    - text: Total now multiplies qty by unit_price.

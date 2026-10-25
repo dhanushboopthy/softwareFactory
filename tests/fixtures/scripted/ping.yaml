@@ -1,0 +1,7 @@
+# `LLM_PROVIDER=scripted LLM_SCRIPT=tests/fixtures/scripted/ping.yaml factory llm-ping`
+agents:
+  ping:
+    - text: Listing the project root.
+      tool_calls:
+        - name: list_files
+          args: {directory: ""}

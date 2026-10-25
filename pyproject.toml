@@ -1,0 +1,71 @@
+[project]
+name = "api-factory"
+version = "0.1.0"
+description = "Spec-to-backend software factory PoC: OpenAPI spec in, verified FastAPI backend out."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.12",
+    "pyyaml>=6.0",
+    "jinja2>=3.1",
+    "pydantic>=2.7",
+    "python-dotenv>=1.0",
+    "httpx>=0.27",
+    "openapi-spec-validator>=0.7",
+    "datamodel-code-generator>=0.26",
+    "openapi-python-client>=0.21",
+    "schemathesis>=3.30",
+    "anthropic>=1.15.0",
+    "openai>=3.35.1",
+    # Harness check tools run against generated projects from the factory's environment.
+    "ruff>=0.6",
+    "bandit>=1.7",
+]
+
+[project.scripts]
+factory = "factory.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.11",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["factory"]
+
+# --- ruff -----------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+# Fixtures are generated-project code (they import fastapi), not factory code.
+extend-exclude = ["runs", "tests/fixtures"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+# assert is the point of a test
+"tests/**" = ["S101"]
+
+# --- mypy -----------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["factory", "tests"]
+exclude = ["^runs/", "^tests/fixtures/"]
+
+# --- pytest ---------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["runs", ".venv", "fixtures"]
+markers = ["e2e: full factory builds (slow; needs uv and network for the first project sync)"]
+
+# --- bandit ---------------------------------------------------------------
+[tool.bandit]
+exclude_dirs = ["tests", "runs", ".venv"]

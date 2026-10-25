@@ -1,0 +1,41 @@
+Iteration {{ iteration }} of {{ max_iters }}.
+{% if spec_changes %}
+
+## Spec changes since the previous build
+This is an incremental build. The existing implementation passed all checks for the previous spec. Change only what these spec changes require; keep everything else as it is.
+{% for c in spec_changes %}
+- {{ c }}
+{% endfor %}
+{% endif %}
+
+## Failures from the last check run
+{% if last_errors %}
+Fix these, most important first:
+
+```
+{{ last_errors }}
+```
+{% else %}
+No check results yet.
+{% endif %}
+
+## AGENTS.md
+{{ agents_md }}
+
+## openapi.yaml
+```yaml
+{{ spec }}
+```
+
+## Project files
+```
+{{ tree }}
+```
+
+{% for path, content in files.items() %}
+### {{ path }}
+```python
+{{ content }}
+```
+
+{% endfor %}

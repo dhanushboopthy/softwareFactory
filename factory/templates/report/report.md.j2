@@ -1,0 +1,145 @@
+# Factory run `{{ r.run_id }}`
+
+| | |
+|---|---|
+| Spec | `{{ r.spec_name }}` (`{{ r.spec_sha256[:12] }}`) |
+| Model | {{ r.provider }} / `{{ r.model }}` |
+| Started | {{ r.started_at.strftime("%Y-%m-%d %H:%M:%S %Z") }} |
+| Ended | {{ r.ended_at.strftime("%Y-%m-%d %H:%M:%S %Z") if r.ended_at else "—" }} ({{ duration }}) |
+| **Status** | **{{ r.status }}**{% if r.status_reason %} — {{ r.status_reason }}{% endif %} |
+| LLM usage | {{ r.usage.llm_calls }} calls · {{ r.usage.input_tokens }} in / {{ r.usage.output_tokens }} out tokens{% if r.usage.cache_read_tokens %} · {{ r.usage.cache_read_tokens }} cache-read{% endif %} · {{ fmt_cost(r.usage.cost_usd) }} |
+| Iterations | {{ r.iterations | length }} ({{ r.iterations | selectattr("agent", "equalto", "coder") | list | length }} coder) |
+| Guardrail violations | {{ r.violations | length }} |
+{% if r.error %}
+
+> **Error:** {{ r.error }}
+{% endif %}
+
+## Stations
+
+| Station | Status | Detail |
+|---|---|---|
+{% for s in r.stations %}
+| {{ s.name }} | {{ "✅" if s.status == "passed" else ("⏭️" if s.status == "skipped" else "❌") }} {{ s.status }} | {{ s.detail | replace("\n", " ") | truncate(160) }} |
+{% endfor %}
+
+## Iterations
+
+{% if r.iterations %}
+| Agent | # | Tool calls | Files | +/− lines | {% for n in check_names %}{{ n }} | {% endfor %}Tokens in/out | Cost | Violations |
+|---|---|---|---|---|{% for n in check_names %}---|{% endfor %}---|---|---|
+{% for it in r.iterations %}
+| {{ it.agent }} | {{ it.index }} | {{ it.tool_calls }} | {{ it.files_changed | length }} | +{{ it.lines_added }}/−{{ it.lines_removed }}{% if it.rejected %} (rejected){% endif %} | {% for n in check_names %}{{ check_cell(it, n) }} | {% endfor %}{{ it.usage.input_tokens }}/{{ it.usage.output_tokens }} | {{ fmt_cost(it.usage.cost_usd) }} | {{ it.violations | length }} |
+{% endfor %}
+
+{% for it in r.iterations %}
+### {{ it.agent }} #{{ it.index }}{% if it.all_passed %} — all checks passed{% endif %}
+
+{% if it.files_changed %}
+- Files: {% for f in it.files_changed %}`{{ f }}`{% if not loop.last %}, {% endif %}{% endfor %}
+
+{% endif %}
+{% if it.diff_path %}
+- Diff: `{{ it.diff_path }}`
+{% endif %}
+{% if it.rejected %}
+- **Rejected:** {{ it.reject_reason }}
+{% endif %}
+{% for c in it.checks %}
+- {{ c.name }}: {{ "pass" if c.passed else ("skipped" if c.skipped else "FAIL") }} — {{ c.summary }}
+{% endfor %}
+{% for v in it.violations %}
+- ⚠️ violation `{{ v.rule }}`{% if v.path %} on `{{ v.path }}`{% endif %}: {{ v.detail }}
+{% endfor %}
+{% if it.failure_summary %}
+
+<details><summary>Failure summary fed to the next iteration</summary>
+
+```
+{{ it.failure_summary }}
+```
+</details>
+{% endif %}
+
+{% endfor %}
+{% else %}
+No agent iterations (deterministic-only run).
+{% endif %}
+
+## Guardrail violations
+
+{% if r.violations %}
+| Agent | Iteration | Rule | Path | Detail |
+|---|---|---|---|---|
+{% for v in r.violations %}
+| {{ v.agent }} | {{ v.iteration if v.iteration is not none else "—" }} | `{{ v.rule }}` | {{ "`" ~ v.path ~ "`" if v.path else "—" }} | {{ v.detail | replace("\n", " ") | replace("|", "\\|") | truncate(140) }} |
+{% endfor %}
+{% else %}
+None.
+{% endif %}
+
+## Contract tests (Schemathesis, final)
+
+**{{ "PASS" if contract.passed else "FAIL" }}** — {{ contract.summary }}
+{% if contract.details %}
+
+| Phase | Status |
+|---|---|
+{% for phase, status in (contract.details.get("phases") or {}).items() %}
+| {{ phase }} | {{ status }} |
+{% endfor %}
+{% if contract.details.get("failures_by_type") %}
+
+| Failure type | Count |
+|---|---|
+{% for t, n in contract.details["failures_by_type"].items() %}
+| {{ t }} | {{ n }} |
+{% endfor %}
+{% endif %}
+{% endif %}
+{% if contract.failures %}
+
+<details><summary>{{ contract.failures | length }} failing operation(s)</summary>
+
+```
+{% for f in contract.failures[:10] %}
+{{ f }}
+
+{% endfor %}
+```
+</details>
+{% endif %}
+{% if r.incremental %}
+
+## Incremental build
+
+Based on run `{{ r.incremental.previous_run }}`.
+
+**Spec changes:**
+{% for c in r.incremental.spec_changes %}
+- {{ c }}
+{% else %}
+- none
+{% endfor %}
+
+**Regenerated:** {{ r.incremental.regenerated | join(", ") or "nothing" }}
+**Preserved (agent-modified, left in place):** {{ r.incremental.preserved | join(", ") or "nothing" }}
+
+**Project diff vs previous run:**
+
+| File | Change | + | − |
+|---|---|---|---|
+{% for f in r.incremental.project_diff %}
+| `{{ f.path }}` | {{ f.change }} | {{ f.lines_added }} | {{ f.lines_removed }} |
+{% else %}
+| (no changes) | | | |
+{% endfor %}
+{% endif %}
+
+## Prompt versions
+
+{% for name, h in r.prompt_versions.items() %}
+- `{{ name }}`: `{{ h }}`
+{% else %}
+- none (no LLM stations ran)
+{% endfor %}

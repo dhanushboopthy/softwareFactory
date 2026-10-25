@@ -1,0 +1,20 @@
+# Incremental scenario: `factory build specs/orders_v2.yaml --from <v1 run>`.
+# The harness must tell both agents what changed in the spec; `expect` checks that it did.
+agents:
+  test_writer:
+    - expect: ["NEW operation POST /orders/{id}/cancel", "added properties ['note']"]
+      tool_calls:
+        - name: read_file
+          args: {path: tests/test_orders.py}
+    - tool_calls:
+        - name: write_file
+          args: {path: tests/test_orders.py, content_file: files/test_orders.py}
+    - text: Added note and cancellation tests; v1 tests unchanged.
+  coder:
+    - expect: ["NEW operation POST /orders/{id}/cancel", "test_cancel_sets_status_and_persists"]
+      tool_calls:
+        - name: write_file
+          args: {path: app/db.py, content_file: files/db.py}
+        - name: write_file
+          args: {path: app/services/orders.py, content_file: files/orders.py}
+    - text: Added the note column and cancel_order.

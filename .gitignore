@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Secrets
+.env
+
+# Factory output: one folder per run, never committed
+runs/*
+!runs/.gitkeep
+
+# Local editor / agent settings
+.idea/
+.vscode/
+.claude/settings.local.json

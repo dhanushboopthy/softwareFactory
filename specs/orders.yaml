@@ -1,0 +1,277 @@
+openapi: 3.1.0
+info:
+  title: Orders API
+  version: 1.0.0
+  description: |
+    Minimal Orders API used as the sample input for API Factory.
+
+    Business rules:
+    - An order has one or more items; an empty `items` list is rejected with 422.
+    - Every item's `qty` must be >= 1; `qty <= 0` is rejected with 422.
+    - `unit_price` must be >= 0.
+    - Bounds (qty <= 10000, unit_price <= 1000000, at most 100 items) keep totals finite.
+    - `total` is computed by the server as sum(qty * unit_price) over all items. Clients never send it.
+    - New orders are created with status `pending`.
+    - Orders are persisted: a created order can be read back by id and appears in the list.
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      summary: Create an order
+      description: |
+        Creates an order from a non-empty list of items and persists it.
+        The server assigns `id`, sets `status` to `pending`, sets `created_at`, and computes
+        `total = sum(qty * unit_price)` across all items.
+        Returns 422 if `items` is empty, any `qty <= 0`, any `unit_price < 0`, or the body is malformed.
+      tags: [orders]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreate"
+            examples:
+              two_items:
+                summary: Two line items
+                value:
+                  items:
+                    - product_id: SKU-001
+                      qty: 2
+                      unit_price: 9.5
+                    - product_id: SKU-002
+                      qty: 1
+                      unit_price: 20.0
+      responses:
+        "201":
+          description: Order created.
+          links:
+            GetCreatedOrder:
+              operationId: getOrder
+              parameters:
+                id: $response.body#/id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+              examples:
+                created:
+                  value:
+                    id: 1
+                    status: pending
+                    items:
+                      - product_id: SKU-001
+                        qty: 2
+                        unit_price: 9.5
+                      - product_id: SKU-002
+                        qty: 1
+                        unit_price: 20.0
+                    total: 39.0
+                    created_at: "2026-01-15T10:30:00Z"
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+    get:
+      operationId: listOrders
+      summary: List orders
+      description: |
+        Returns all persisted orders, ordered by `id` ascending.
+        If `status` is given, only orders with that status are returned.
+        Returns an empty list when nothing matches.
+      tags: [orders]
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Only return orders with this status.
+          schema:
+            $ref: "#/components/schemas/OrderStatus"
+      responses:
+        "200":
+          description: List of orders (possibly empty).
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+              examples:
+                one_order:
+                  value:
+                    - id: 1
+                      status: pending
+                      items:
+                        - product_id: SKU-001
+                          qty: 2
+                          unit_price: 9.5
+                      total: 19.0
+                      created_at: "2026-01-15T10:30:00Z"
+                empty:
+                  value: []
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+  /orders/{id}:
+    get:
+      operationId: getOrder
+      summary: Get an order by id
+      description: Returns the order with the given id, or 404 if no such order exists.
+      tags: [orders]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Order id.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 9223372036854775807
+      responses:
+        "200":
+          description: The order.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Order"
+              examples:
+                found:
+                  value:
+                    id: 1
+                    status: pending
+                    items:
+                      - product_id: SKU-001
+                        qty: 2
+                        unit_price: 9.5
+                    total: 19.0
+                    created_at: "2026-01-15T10:30:00Z"
+        "404":
+          description: No order with this id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+              examples:
+                not_found:
+                  value:
+                    detail: Order not found
+        "422":
+          $ref: "#/components/responses/ValidationFailed"
+
+components:
+  responses:
+    ValidationFailed:
+      description: Request failed validation (FastAPI default error shape).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/HTTPValidationError"
+          examples:
+            empty_items:
+              value:
+                detail:
+                  - loc: [body, items]
+                    msg: List should have at least 1 item after validation, not 0
+                    type: too_short
+            non_positive_qty:
+              value:
+                detail:
+                  - loc: [body, items, 0, qty]
+                    msg: Input should be greater than or equal to 1
+                    type: greater_than_equal
+
+  schemas:
+    OrderStatus:
+      type: string
+      enum: [pending, paid, shipped, cancelled]
+      description: Lifecycle status. New orders are always `pending`.
+
+    OrderItem:
+      type: object
+      additionalProperties: false
+      required: [product_id, qty, unit_price]
+      properties:
+        product_id:
+          type: string
+          minLength: 1
+          maxLength: 64
+          examples: [SKU-001]
+        qty:
+          type: integer
+          minimum: 1
+          maximum: 10000
+          description: Quantity; must be between 1 and 10000.
+          examples: [2]
+        unit_price:
+          type: number
+          minimum: 0
+          maximum: 1000000
+          description: Price per unit; must be between 0 and 1000000.
+          examples: [9.5]
+
+    OrderCreate:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/OrderItem"
+
+    Order:
+      type: object
+      required: [id, status, items, total, created_at]
+      properties:
+        id:
+          type: integer
+          examples: [1]
+        status:
+          $ref: "#/components/schemas/OrderStatus"
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/OrderItem"
+        total:
+          type: number
+          minimum: 0
+          description: Server-computed sum(qty * unit_price) over all items.
+          examples: [39.0]
+        created_at:
+          type: string
+          format: date-time
+
+    Error:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: string
+
+    ValidationError:
+      type: object
+      required: [loc, msg, type]
+      properties:
+        loc:
+          type: array
+          items:
+            anyOf:
+              - type: string
+              - type: integer
+        msg:
+          type: string
+        type:
+          type: string
+
+    HTTPValidationError:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationError"
