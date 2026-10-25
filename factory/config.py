@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,21 @@ DEFAULT_FORBIDDEN_PATTERNS: tuple[str, ...] = (
     "pytest.mark.xfail",
     "importlib",
     "__import__",
+)
+
+# Rule profiles. The input document picks one (see pipeline.input_profile): an OpenAPI spec runs
+# the "openapi" profile, which is exactly the FactoryConfig defaults below; an entities file runs
+# "entities", where CRUD, ownership, ORM, migrations, routes and wiring are generated read-only and
+# the coder writes only rule hooks (docs/designs/description-to-backend.md, R2-R4, R7).
+PROFILES: tuple[str, ...] = ("openapi", "entities")
+
+# DDL strings agents may not write under the entities profile. A tripwire, not the enforcement:
+# the schema comes from generated read-only ORM and migrations, applied with `alembic upgrade head`.
+ENTITIES_DDL_PATTERNS: tuple[str, ...] = (
+    "create_table",
+    "ALTER TABLE",
+    "metadata.create_all",
+    "alembic",
 )
 
 
@@ -107,12 +122,32 @@ class FactoryConfig:
 
     runs_dir: Path = field(default_factory=lambda: Path("runs"))
 
+    # Chosen from the input document, never from the environment.
+    profile: str = "openapi"
+
+    def for_profile(self, profile: str) -> FactoryConfig:
+        """This config with the allowlists of ``profile``; budgets and limits are unchanged."""
+        if profile not in PROFILES:
+            raise ValueError(f"unknown profile {profile!r}; expected one of {PROFILES}")
+        if profile == "openapi":
+            return replace(self, profile=profile)
+        return replace(
+            self,
+            profile=profile,
+            coder_writable=("app/rules/**",),
+            read_only=(*self.read_only, "entities.yaml", "tests/generated/**"),
+            test_writer_unreadable=(*self.test_writer_unreadable, "app/rules/**"),
+            forbidden_patterns=(*self.forbidden_patterns, *ENTITIES_DDL_PATTERNS),
+        )
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> FactoryConfig:
         """Build a config from defaults, overriding scalar fields from ``FACTORY_<FIELD>`` vars."""
         env = os.environ if env is None else env
         overrides: dict[str, Any] = {}
         for f in fields(cls):
+            if f.name == "profile":
+                continue
             raw = env.get(ENV_PREFIX + f.name.upper())
             if raw is None:
                 continue

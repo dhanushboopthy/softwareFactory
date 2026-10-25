@@ -66,6 +66,50 @@ def test_test_writer_may_only_write_test_modules(guard: Guardrails) -> None:
         assert not guard.check_write(Role.TEST_WRITER, path, GOOD).allowed, path
 
 
+# --- the entities profile --------------------------------------------------------------------
+
+
+@pytest.fixture
+def entities_guard(cfg: FactoryConfig, project: Path) -> Guardrails:
+    return Guardrails(cfg.for_profile("entities"), project)
+
+
+def test_entities_coder_writes_only_rule_hooks(entities_guard: Guardrails) -> None:
+    assert entities_guard.check_write(Role.CODER, "app/rules/projects.py", GOOD).allowed
+    for path in ("app/routes/orders.py", "app/services/orders.py", "app/db.py", "app/main.py",
+                 "app/crud/projects.py", "app/orm.py"):
+        decision = entities_guard.check_write(Role.CODER, path, GOOD)
+        assert not decision.allowed, path
+        assert decision.rule == "path_not_allowed", path
+
+
+def test_entities_generated_tests_and_entities_file_are_read_only(
+    entities_guard: Guardrails,
+) -> None:
+    for role, path in ((Role.TEST_WRITER, "tests/generated/test_ownership.py"),
+                       (Role.CODER, "entities.yaml")):
+        decision = entities_guard.check_write(role, path, GOOD)
+        assert not decision.allowed, path
+        assert decision.rule == "read_only", path
+
+
+def test_entities_test_writer_cannot_read_rule_hooks(entities_guard: Guardrails) -> None:
+    hooks = "app/rules/projects.py"
+    assert entities_guard.check_read(Role.TEST_WRITER, hooks).rule == "read_denied"
+    assert entities_guard.check_read(Role.CODER, hooks).allowed
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["op.create_table('x')\n", "q = 'ALTER TABLE task ADD x int'\n",
+     "Base.metadata.create_all(engine)\n", "from alembic import op\n"],
+)
+def test_entities_profile_blocks_ddl(entities_guard: Guardrails, guard: Guardrails,
+                                     code: str) -> None:
+    assert not entities_guard.check_write(Role.CODER, "app/rules/projects.py", code).allowed
+    assert guard.check_write(Role.CODER, "app/services/orders.py", code).allowed
+
+
 # --- forbidden content -----------------------------------------------------------------------
 
 

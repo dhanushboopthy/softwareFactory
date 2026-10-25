@@ -7,11 +7,14 @@ from __future__ import annotations
 
 import hashlib
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 from factory.config import FactoryConfig
 from factory.harness import checks
@@ -40,6 +43,22 @@ class StopRun(Exception):
 
 
 EMPTY_SPEC = parse_spec({"paths": {}})  # placeholder until lint has accepted the real spec
+
+
+def input_profile(raw: Mapping[str, Any]) -> str:
+    """The rule profile an input document runs under (see config.PROFILES)."""
+    if "openapi" in raw:
+        return "openapi"
+    if "entities" in raw:
+        return "entities"
+    raise ValueError("input has neither a top-level `openapi` nor a top-level `entities` key")
+
+
+def _detect_profile(spec_path: Path) -> str:
+    try:
+        return input_profile(load_raw(spec_path))
+    except (OSError, ValueError, yaml.YAMLError):
+        return "openapi"  # unreadable or unrecognised input: lint reports the problem
 
 
 def new_run_id(spec_path: Path) -> str:
@@ -92,6 +111,7 @@ def build(
     log: Callable[[str], None] = lambda _: None,
 ) -> RunRecord:
     spec_path = opts.spec_path.resolve()
+    cfg = cfg.for_profile(_detect_profile(spec_path))
     run_id = opts.run_id or new_run_id(spec_path)
     run_dir = (cfg.runs_dir / run_id).resolve()
     if run_dir.exists():
@@ -136,6 +156,10 @@ def _build(ctx: RunContext, opts: BuildOptions, spec_path: Path) -> None:
 
     # 1. Lint
     with station(ctx, "lint") as st:
+        if cfg.profile == "entities":
+            st.detail = ("entities input is not supported yet (v2 core, PR 1 in "
+                         "docs/designs/description-to-backend.md)")
+            raise StopRun("entities input is not supported yet")
         result = lint.lint_spec(load_raw(spec_path))
         st.detail = "; ".join(result.errors + result.warnings)
         if not result.ok:

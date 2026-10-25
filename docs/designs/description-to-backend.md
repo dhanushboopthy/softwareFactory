@@ -1375,7 +1375,7 @@ Lane A: entities format → templates v2 (shared factory/entities). Lane B: Post
 ## Implementation Tasks
 Synthesized from this review's findings. Each task derives from a specific finding above. Run with Claude Code or Codex; checkbox as you ship.
 
-- [ ] **T1 (P1, human: ~1 day / CC: ~1 hr)** — config — Commit the current repo, then split rule profiles by input type
+- [x] **T1 (P1, human: ~1 day / CC: ~1 hr)** — config — Commit the current repo, then split rule profiles by input type
   - Surfaced by: Section 3 regression (R7, D9); OV#9 (R17, D21)
   - Files: factory/config.py, factory/pipeline.py, tests/test_config.py, tests/test_guardrails.py
   - Verify: `uv run pytest` and `FACTORY_E2E=1 uv run pytest tests/test_e2e.py` green with unchanged assertions
