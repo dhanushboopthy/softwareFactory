@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-RunStatus = Literal["running", "passed", "failed", "budget_exhausted", "error"]
+RunStatus = Literal["running", "passed", "failed", "budget_exhausted", "error", "cancelled"]
 StationStatus = Literal["passed", "failed", "skipped", "error"]
 
 

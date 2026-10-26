@@ -110,6 +110,10 @@ def station(ctx: RunContext, name: str) -> Iterator[StationResult]:
         if result.status == "passed":
             result.status = "failed"
         raise
+    except KeyboardInterrupt:
+        result.status = "error"
+        result.detail = "interrupted (cancelled)"
+        raise
     except Exception as exc:
         result.status = "error"
         result.detail = f"{type(exc).__name__}: {exc}"
@@ -178,6 +182,8 @@ def build(
         record.status, record.status_reason = "failed", str(exc)
     except BudgetExceeded as exc:
         record.status, record.status_reason = "budget_exhausted", str(exc)
+    except KeyboardInterrupt:  # Ctrl-C or SIGINT (the UI's Cancel): clean up already ran
+        record.status, record.status_reason = "cancelled", "cancelled by the user"
     except Exception as exc:
         record.status, record.status_reason = "error", f"{type(exc).__name__}: {exc}"
         record.error = record.status_reason

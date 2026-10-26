@@ -1,0 +1,18 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ heading }} · API Factory{% endblock %}
+{% block content %}
+<section class="panel narrow">
+  <h2>{{ heading }}</h2>
+  <p>{{ message }}</p>
+{% if login %}
+  <form method="post" action="/login">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="token">Access token</label>
+    <input id="token" name="token" type="password" autocomplete="off" required>
+    <button type="submit">Sign in</button>
+  </form>
+{% else %}
+  <p><a href="/">Back to the dashboard</a></p>
+{% endif %}
+</section>
+{% endblock %}

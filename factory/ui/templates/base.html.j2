@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+{% if refresh %}
+  <meta http-equiv="refresh" content="{{ refresh }}">
+{% endif %}
+  <title>{% block title %}API Factory{% endblock %}</title>
+  <link rel="stylesheet" href="/static/ui.css">
+</head>
+<body>
+  <header>
+    <a class="brand" href="/">API Factory</a>
+    <span class="tagline">description in, verified backend out</span>
+  </header>
+  <main>
+{% block content %}{% endblock %}
+  </main>
+  <footer>Runs on this machine only. Pages contain no scripts.</footer>
+</body>
+</html>

@@ -135,7 +135,28 @@ uv run factory runs                                       # list runs
 uv run factory report latest                              # print report.md (--json for run.json)
 ```
 
-`build` exits 0 only when the run status is `passed`.
+`build` exits 0 only when the run status is `passed` (130 when cancelled with Ctrl-C).
+
+### Web UI
+
+```bash
+uv run factory ui                    # http://127.0.0.1:8765, this machine only
+```
+
+The UI does everything above from a browser: describe an app and have the AI draft an entities
+file (or upload one), read a plain-language summary of every entity, rule and gap, edit and save
+it, then tick "I have read…" and approve, which starts the build. A run page shows each station,
+iteration, check, cheat probe, budget and the console while it runs (the page reloads by itself),
+with Cancel, a file viewer, and downloads of the project, the client SDK and the OpenAPI file.
+One build runs at a time, as a separate process, so a crash or Cancel (Ctrl-C) cleans up like the
+command line does.
+
+Pages are server-rendered with no scripts (the repo is Python only). It listens on `127.0.0.1`
+and refuses other Host and Origin values; every form carries a per-process CSRF token. To reach it
+from another machine set `FACTORY_UI_TOKEN` and pass `--allow-remote` (plus
+`FACTORY_UI_ALLOWED_HOSTS=name1,name2` for the host names you will use); there is no TLS, so put
+it behind a tunnel or reverse proxy. Saving a draft never approves it; only the approve button
+does, and only for the exact text shown. Drafts are stored under `drafts/`.
 
 ### Without an API key
 

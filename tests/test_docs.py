@@ -10,8 +10,8 @@ from .conftest import ROOT
 
 README = (ROOT / "README.md").read_text()
 DESIGN = (ROOT / "docs" / "designs" / "description-to-backend.md").read_text()
-# Switches read directly by the test suite, not config fields.
-TEST_SWITCHES = {"FACTORY_E2E", "FACTORY_EVAL"}
+# Read directly (by the test suite or the `factory ui` command), not config fields.
+TEST_SWITCHES = {"FACTORY_E2E", "FACTORY_EVAL", "FACTORY_UI_TOKEN", "FACTORY_UI_ALLOWED_HOSTS"}
 
 
 def test_the_readmes_entities_example_is_a_valid_approved_file() -> None:

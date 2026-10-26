@@ -64,4 +64,13 @@
 **Effort:** S
 **Priority:** P3
 
+### Look at the web UI in a real browser
+
+**What:** Run `uv run factory ui` and click through the dashboard, a draft review, an approve and a build, including Cancel and the downloads, in a real browser.
+
+**Why:** The UI was built and tested with an HTTP test client and a real build subprocess, but no browser was available, so layout, the strict CSP (no inline styles or scripts) and the meta refresh were never seen rendered.
+
+**Effort:** S
+**Priority:** P2
+
 ## Completed

@@ -107,7 +107,7 @@ def build(
         _log(str(exc))
         raise typer.Exit(code=2) from exc
     typer.echo(str(cfg.runs_dir / record.run_id / "report.md"))
-    raise typer.Exit(code=0 if record.status == "passed" else 1)
+    raise typer.Exit(code={"passed": 0, "cancelled": 130}.get(record.status, 1))
 
 
 @app.command()
@@ -163,6 +163,45 @@ def draft(
         for gap in result.gaps:
             _log(f"  - {gap}")
     _log("Review the file, then set `approved: true` and run `factory build`.")
+
+
+@app.command()
+def ui(
+    host: Annotated[str, typer.Option(help="Address to listen on.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8765,
+    allow_remote: Annotated[
+        bool, typer.Option("--allow-remote", help="Listen beyond this machine (needs "
+                           "FACTORY_UI_TOKEN).")
+    ] = False,
+) -> None:
+    """Serve the web UI: review drafts, approve, start builds and watch runs.
+
+    It listens on this machine only. It can start builds that run generated code, so serving it
+    further needs --allow-remote and an access token in FACTORY_UI_TOKEN.
+    """
+    import os
+
+    import uvicorn
+
+    from factory.ui.app import create_app
+    from factory.ui.security import UiConfigError, UiSettings
+
+    extra_hosts = tuple(h.strip() for h in os.environ.get("FACTORY_UI_ALLOWED_HOSTS", "").split(",")
+                        if h.strip())
+    settings = UiSettings(cfg=FactoryConfig.from_env(), host=host, port=port,
+                          auth_token=os.environ.get("FACTORY_UI_TOKEN") or None,
+                          extra_hosts=extra_hosts)
+    if not settings.loopback and not allow_remote:
+        _log(f"{host} is not this machine only; pass --allow-remote (and set FACTORY_UI_TOKEN) "
+             "if you really mean to serve the UI there")
+        raise typer.Exit(code=2)
+    try:
+        application = create_app(settings)
+    except UiConfigError as exc:
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"API Factory UI: http://{host}:{port}/   (Ctrl-C to stop)")
+    uvicorn.run(application, host=host, port=port, log_level="warning")
 
 
 @app.command()

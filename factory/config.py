@@ -172,6 +172,8 @@ class FactoryConfig:
     max_file_bytes: int = 200_000
 
     runs_dir: Path = field(default_factory=lambda: Path("runs"))
+    # Where the UI keeps drafted entities files while they are being reviewed (never under runs/).
+    drafts_dir: Path = field(default_factory=lambda: Path("drafts"))
 
     # Chosen from the input document, never from the environment.
     profile: str = "openapi"
@@ -236,4 +238,5 @@ class FactoryConfig:
         """JSON-serialisable form for the run report."""
         data = asdict(self)
         data["runs_dir"] = str(self.runs_dir)
+        data["drafts_dir"] = str(self.drafts_dir)
         return data

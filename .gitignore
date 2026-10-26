@@ -22,6 +22,9 @@ dist/
 runs/*
 !runs/.gitkeep
 
+# Drafts being reviewed in the UI
+drafts/
+
 # Local editor / agent settings
 .idea/
 .vscode/

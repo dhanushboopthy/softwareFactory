@@ -1,0 +1,75 @@
+{% extends "base.html.j2" %}
+{% block title %}API Factory{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>This machine</h2>
+  <ul class="checks">
+{% for c in checks %}
+    <li class="{{ 'ok' if c.ok else ('bad' if c.ok is false else 'na') }}">
+      <span class="mark">{{ '✓' if c.ok else ('✗' if c.ok is false else '–') }}</span>
+      <strong>{{ c.name }}</strong> <span class="muted">{{ c.detail }}</span>
+{% if c.hint %}
+      <div class="hint">{{ c.hint }}</div>
+{% endif %}
+    </li>
+{% endfor %}
+  </ul>
+</section>
+
+{% if current %}
+<section class="panel running-banner">
+  <strong>Build running:</strong> <a href="/runs/{{ current.run_id }}">{{ current.run_id }}</a>
+{% if current.cancelling %}
+  <span class="chip warn">cancelling</span>
+{% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Drafts <a class="button small" href="/drafts/new">New draft</a></h2>
+{% if drafts %}
+  <ul class="plain">
+{% for d in drafts %}
+    <li><a href="/drafts/{{ d.id }}">{{ d.id }}</a>
+        <span class="chip {{ 'run' if d.status == 'drafting' else ('ok' if d.status == 'ready' else 'bad') }}">{{ d.status }}</span>
+        <span class="muted">{{ d.sources | join(', ') }}{% if d.build_run_id %} · built{% endif %}</span></li>
+{% endfor %}
+  </ul>
+{% else %}
+  <p class="muted">No drafts. Describe an app and the AI drafts its entities file for you to review.</p>
+{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Runs<a class="button small" href="/builds/new">New build</a></h2>
+{% if rows %}
+  <table>
+    <thead>
+      <tr><th>Run</th><th>Input</th><th>Status</th><th>Started</th><th>Took</th>
+          <th class="num">Iterations</th><th class="num">Cost</th></tr>
+    </thead>
+    <tbody>
+{% for r in rows %}
+      <tr>
+        <td>{% if r.readable %}<a href="/runs/{{ r.run_id }}">{{ r.run_id }}</a>{% else %}{{ r.run_id }}{% endif %}
+            <div class="muted">{{ r.title }}</div></td>
+        <td>{{ r.kind }}</td>
+        <td><span class="chip {{ r.status_class }}">{{ r.status }}</span>
+{% if r.detail %}
+            <div class="muted">{{ r.detail }}</div>
+{% endif %}
+        </td>
+        <td>{{ r.started }}</td>
+        <td>{{ r.duration }}</td>
+        <td class="num">{{ r.iterations }}</td>
+        <td class="num">{{ r.cost }}</td>
+      </tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">No runs yet. Start one from the command line (<code>factory build …</code>)
+     and it appears here.</p>
+{% endif %}
+</section>
+{% endblock %}

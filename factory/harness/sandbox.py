@@ -94,6 +94,12 @@ def run(
         _kill_group(proc)
         stdout, stderr = proc.communicate()
         timed_out = True
+    except BaseException:
+        # Ctrl-C, SIGTERM or any other interruption: the child has its own session, so it would
+        # otherwise keep running (uv, pytest, uvicorn...) after the factory has stopped.
+        _kill_group(proc)
+        proc.communicate()
+        raise
     return CommandResult(
         cmd=tuple(cmd),
         returncode=None if timed_out else proc.returncode,

@@ -1,0 +1,20 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ run_id }} · API Factory{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+<section class="panel">
+  <h2>{{ run_id }}</h2>
+{% if running %}
+  <p><span class="chip run">starting</span> The build has started and is preparing its first
+     report; this page reloads by itself.</p>
+{% else %}
+  <p><span class="chip bad">did not start</span> The build process ended
+     {% if returncode is not none %}(exit code {{ returncode }}) {% endif %}before it wrote a report.
+     Its console output is below.</p>
+{% endif %}
+</section>
+<section class="panel">
+  <h2>Console output</h2>
+  <pre>{{ console or '(nothing yet)' }}</pre>
+</section>
+{% endblock %}

@@ -41,6 +41,7 @@ class DraftResult:
     usage: Usage
     gaps: list[str] = field(default_factory=list)
     prompt_versions: dict[str, str] = field(default_factory=dict)
+    last_answer: str = ""  # the last YAML the model gave when none was valid (to fix by hand)
 
 
 def read_documents(paths: Sequence[Path]) -> list[Document]:
@@ -145,4 +146,4 @@ def draft(
             out.write_text(render_draft(previous, [d.name for d in documents]))
             return DraftResult(out, attempt, [], usage, list(doc.gaps), versions)
         log(f"    invalid: {len(errors)} problem(s)")
-    return DraftResult(None, cfg.spec_writer_max_attempts, errors, usage, [], versions)
+    return DraftResult(None, cfg.spec_writer_max_attempts, errors, usage, [], versions, previous)
