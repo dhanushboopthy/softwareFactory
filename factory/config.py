@@ -47,6 +47,25 @@ DEFAULT_FORBIDDEN_PATTERNS: tuple[str, ...] = (
 # the coder writes only rule hooks (docs/designs/description-to-backend.md, R2-R4, R7).
 PROFILES: tuple[str, ...] = ("openapi", "entities")
 
+# Under the entities profile only app/rules/** is coder-writable; this lists what else exists and
+# is generated, so the report and the guardrail messages say "read-only", not just "not allowed".
+ENTITIES_READ_ONLY: tuple[str, ...] = (
+    "entities.yaml",
+    "tests/generated/**",
+    "app/routes/**",
+    "app/crud/**",
+    "app/main.py",
+    "app/orm.py",
+    "app/auth.py",
+    "app/settings.py",
+    "app/db.py",
+    "app/errors.py",
+    "migrations/**",
+    "alembic.ini",
+    "Dockerfile",
+    "compose.yaml",
+)
+
 # DDL strings agents may not write under the entities profile. A tripwire, not the enforcement:
 # the schema comes from generated read-only ORM and migrations, applied with `alembic upgrade head`.
 ENTITIES_DDL_PATTERNS: tuple[str, ...] = (
@@ -70,6 +89,17 @@ class FactoryConfig:
     command_timeout_s: int = 120
     setup_timeout_s: int = 600
     server_start_timeout_s: int = 30
+
+    # Generated list endpoints (entities profile): `limit` default and maximum (R10, decision D12).
+    list_limit_default: int = 50
+    list_limit_max: int = 100
+
+    # Postgres for entities-profile checks (harness/postgres.py). "docker" runs one container per
+    # run; "local" starts a server from the binaries in postgres_bin_dir (for hosts without Docker).
+    postgres_backend: str = "docker"
+    postgres_image: str = "postgres:16-alpine"
+    postgres_bin_dir: str = "/usr/lib/postgresql/16/bin"
+    postgres_ready_timeout_s: int = 60
 
     # Run budget (loop stops with status "budget_exhausted" when either is exceeded)
     max_tokens_per_run: int = 2_000_000
@@ -135,7 +165,7 @@ class FactoryConfig:
             self,
             profile=profile,
             coder_writable=("app/rules/**",),
-            read_only=(*self.read_only, "entities.yaml", "tests/generated/**"),
+            read_only=(*self.read_only, *ENTITIES_READ_ONLY),
             test_writer_unreadable=(*self.test_writer_unreadable, "app/rules/**"),
             forbidden_patterns=(*self.forbidden_patterns, *ENTITIES_DDL_PATTERNS),
         )

@@ -76,11 +76,15 @@ def entities_guard(cfg: FactoryConfig, project: Path) -> Guardrails:
 
 def test_entities_coder_writes_only_rule_hooks(entities_guard: Guardrails) -> None:
     assert entities_guard.check_write(Role.CODER, "app/rules/projects.py", GOOD).allowed
-    for path in ("app/routes/orders.py", "app/services/orders.py", "app/db.py", "app/main.py",
-                 "app/crud/projects.py", "app/orm.py"):
+    for path in ("app/routes/orders.py", "app/db.py", "app/main.py", "app/crud/projects.py",
+                 "app/orm.py", "app/auth.py", "app/settings.py", "app/errors.py",
+                 "migrations/versions/0001_initial.py", "alembic.ini", "Dockerfile",
+                 "compose.yaml", "tests/generated/test_x.py"):
         decision = entities_guard.check_write(Role.CODER, path, GOOD)
         assert not decision.allowed, path
-        assert decision.rule == "path_not_allowed", path
+        assert decision.rule == "read_only", path  # generated files are named read-only
+    decision = entities_guard.check_write(Role.CODER, "app/services/orders.py", GOOD)
+    assert not decision.allowed and decision.rule == "path_not_allowed"  # simply not a rules file
 
 
 def test_entities_generated_tests_and_entities_file_are_read_only(

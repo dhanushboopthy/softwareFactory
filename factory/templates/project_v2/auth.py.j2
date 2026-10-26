@@ -1,0 +1,84 @@
+"""Password hashing, tokens and the `current_user` dependency. Generated; read-only for agents.
+
+Every route depends on `CurrentUser` and nothing else in the app knows how users are
+authenticated, so another login method is a different version of this one module.
+"""
+
+import base64
+import hashlib
+import hmac
+import secrets
+from datetime import UTC, datetime, timedelta
+from typing import Annotated
+
+import jwt
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy.orm import Session
+
+from app import orm, settings
+from app.db import get_session
+
+_bearer = HTTPBearer(auto_error=False)
+_SCHEME = "pbkdf2_sha256"
+
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_bytes(16)
+    iterations = settings.PASSWORD_HASH_ITERATIONS
+    digest = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    return "$".join(
+        [_SCHEME, str(iterations), base64.b64encode(salt).decode(), base64.b64encode(digest).decode()]
+    )
+
+
+def verify_password(password: str, stored: str) -> bool:
+    try:
+        scheme, iterations, salt, digest = stored.split("$")
+        if scheme != _SCHEME:
+            return False
+        actual = hashlib.pbkdf2_hmac(
+            "sha256", password.encode(), base64.b64decode(salt), int(iterations)
+        )
+        return hmac.compare_digest(actual, base64.b64decode(digest))
+    except ValueError:
+        return False
+
+
+def create_token(user_id: int) -> str:
+    now = datetime.now(UTC)
+    claims = {
+        "sub": str(user_id),
+        "iat": now,
+        "exp": now + timedelta(minutes=settings.TOKEN_TTL_MINUTES),
+    }
+    return jwt.encode(claims, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=401, detail=detail, headers={"WWW-Authenticate": "Bearer"}
+    )
+
+
+def current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_bearer)],
+    session: Annotated[Session, Depends(get_session)],
+) -> orm.User:
+    """The signed-in user, or a 401 (FastAPI's own bearer check would answer 403)."""
+    if credentials is None:
+        raise _unauthorized("Missing bearer token")
+    try:
+        claims = jwt.decode(
+            credentials.credentials, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM]
+        )
+        user_id = int(claims["sub"])
+    except (jwt.PyJWTError, KeyError, ValueError):
+        raise _unauthorized("Invalid or expired token") from None
+    user = session.get(orm.User, user_id)
+    if user is None:
+        raise _unauthorized("Unknown user")
+    return user
+
+
+CurrentUser = Annotated[orm.User, Depends(current_user)]

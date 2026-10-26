@@ -1,0 +1,29 @@
+"""Deliberately fake app/rules/{{ e.table }}.py used by the anti-cheating probe (R13).
+
+{% if mode == "never" %}
+"Never reject": every hook accepts and every action returns its row unchanged. A test suite that
+passes against this does not check that bad input is rejected.
+{% else %}
+"Always reject": every hook that has a rule rejects with that rule's status. A test suite that
+passes against this does not check that good input is accepted.
+{% endif %}
+"""
+
+from sqlalchemy.orm import Session
+
+from app import models, orm
+{% if uses_violation %}
+from app.errors import RuleViolation
+{% endif %}
+{% for h in e.hooks %}
+
+
+def {{ h.name }}({{ h.params }}) -> {{ h.returns }}:
+{% if mode == "always" and h.rules %}
+    raise RuleViolation({{ h.rules[0].id | tojson }}, "cheat probe: always reject")
+{% elif h.is_action %}
+    return row
+{% else %}
+    return None
+{% endif %}
+{% endfor %}

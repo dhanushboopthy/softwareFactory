@@ -128,6 +128,8 @@ class RunRecord(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     contract: CheckResult | None = None
+    # Entities profile: the two fake-rules runs of the accepted (or last) test-writer attempt.
+    cheat_probes: list[CheckResult] = Field(default_factory=list)
     incremental: IncrementalInfo | None = None
     error: str | None = None
 

@@ -120,6 +120,37 @@ def find_uv() -> str:
     raise FileNotFoundError("uv not found; install it from https://docs.astral.sh/uv/")
 
 
+@contextlib.contextmanager
+def background(
+    cmd: Sequence[str],
+    cwd: Path,
+    log_path: Path,
+    env: Mapping[str, str] | None = None,
+) -> Iterator[subprocess.Popen[str]]:
+    """Run ``cmd`` in its own process group, output to ``log_path``; always stopped on exit."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w") as log:
+        proc = subprocess.Popen(  # noqa: S603 - argv list built by the factory, no shell
+            list(cmd),
+            cwd=cwd,
+            env=scrubbed_env(env),
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+        try:
+            yield proc
+        finally:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
+                os.killpg(proc.pid, signal.SIGTERM)
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                _kill_group(proc)
+                proc.wait()
+
+
 @dataclass
 class Server:
     base_url: str

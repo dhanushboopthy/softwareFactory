@@ -1,0 +1,44 @@
+"""Initial schema. Generated from entities.yaml by API Factory; read-only for agents."""
+
+import sqlalchemy as sa
+from alembic import op
+
+revision = "0001"
+down_revision = None
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "users",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("email", sa.String(254), nullable=False),
+        sa.Column("password_hash", sa.String(255), nullable=False),
+        sa.UniqueConstraint("email"),
+    )
+{% for e in entities %}
+    op.create_table(
+        {{ e.table | tojson }},
+        sa.Column("id", sa.Integer(), primary_key=True),
+{% for fk in e.foreign_keys %}
+        sa.Column("{{ fk.column }}", sa.Integer(), nullable=False),
+{% endfor %}
+{% for c in e.columns %}
+        {{ c.migration_column }},
+{% endfor %}
+{% for fk in e.foreign_keys %}
+        sa.ForeignKeyConstraint(["{{ fk.column }}"], ["{{ fk.target_table }}.id"], ondelete="CASCADE"),
+{% endfor %}
+    )
+{% for fk in e.foreign_keys %}
+    op.create_index("ix_{{ e.table }}_{{ fk.column }}", {{ e.table | tojson }}, ["{{ fk.column }}"])
+{% endfor %}
+{% endfor %}
+
+
+def downgrade() -> None:
+{% for e in entities | reverse %}
+    op.drop_table({{ e.table | tojson }})
+{% endfor %}
+    op.drop_table("users")

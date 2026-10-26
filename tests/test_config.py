@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from factory.config import ENTITIES_DDL_PATTERNS, FactoryConfig
+from factory.config import ENTITIES_DDL_PATTERNS, ENTITIES_READ_ONLY, FactoryConfig
 
 
 def test_defaults_match_guardrail_table() -> None:
@@ -53,7 +53,12 @@ def test_entities_profile_rules() -> None:
     assert cfg.profile == "entities"
     assert cfg.coder_writable == ("app/rules/**",)
     assert set(base.read_only) < set(cfg.read_only)
-    assert {"entities.yaml", "tests/generated/**"} <= set(cfg.read_only)
+    assert set(ENTITIES_READ_ONLY) <= set(cfg.read_only)
+    assert {"entities.yaml", "tests/generated/**", "app/routes/**", "app/crud/**", "app/main.py",
+            "app/orm.py", "app/auth.py", "app/settings.py", "app/db.py", "app/errors.py",
+            "migrations/**", "alembic.ini", "Dockerfile", "compose.yaml"} == set(
+                ENTITIES_READ_ONLY)
+    assert {"openapi.yaml", "app/models.py", "tests/conftest.py"} <= set(cfg.read_only)
     assert "app/rules/**" in cfg.test_writer_unreadable
     assert set(ENTITIES_DDL_PATTERNS) <= set(cfg.forbidden_patterns)
     assert cfg.coder_read_only == base.coder_read_only

@@ -1,0 +1,26 @@
+"""Database engine and session dependency. Generated; read-only for agents.
+
+There is deliberately no create_all and no DDL here: tables come only from the migrations,
+applied with `alembic upgrade head`.
+"""
+
+from collections.abc import Iterator
+from typing import Annotated
+
+from fastapi import Depends
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session, sessionmaker
+
+from app import settings
+
+engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
+
+def get_session() -> Iterator[Session]:
+    """One session per request. Routes commit explicitly; an unhandled error rolls back."""
+    with SessionLocal() as session:
+        yield session
+
+
+SessionDep = Annotated[Session, Depends(get_session)]

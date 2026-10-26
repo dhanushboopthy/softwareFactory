@@ -1,0 +1,279 @@
+"""Generated tests for {{ e.name }}. Read-only for every agent.
+
+These check what the templates guarantee: authentication, ownership, CRUD, paging, generated
+guards and state transitions. They do not test the LLM-written rules; the test writer does that.
+"""
+
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+{% if e.parent %}
+from sqlalchemy import text
+
+from app.db import engine
+{% endif %}
+
+Headers = dict[str, str]
+PAYLOADS: list[dict[str, Any]] = {{ payloads }}
+PATCH: dict[str, Any] = {{ update_patch | pyrepr }}
+SKIP_ECHO: list[str] = {{ skip_echo | pyrepr }}
+LIMIT_MAX = {{ limit_max }}
+{% if e.parent %}
+PARENT_COLLECTION = {{ parent.collection | tojson }}
+PARENT_PAYLOAD: dict[str, Any] = {{ parent_payload }}
+{% endif %}
+{% macro op_call(g) %}
+{% if g.op == "update" %}
+    response = client.patch(url, json={}, headers=user_a)
+{% elif g.op == "delete" %}
+    response = client.delete(url, headers=user_a)
+{% else %}
+    response = client.post(url + "/{{ g.op }}", headers=user_a)
+{% endif %}
+    assert response.status_code == {{ g.status }}, response.text
+    assert response.json()["rule"] == {{ g.id | tojson }}
+{% endmacro %}
+
+
+def new_parent(client: TestClient, headers: Headers) -> int | None:
+{% if e.parent %}
+    response = client.post(PARENT_COLLECTION, json=PARENT_PAYLOAD, headers=headers)
+    assert response.status_code == 201, response.text
+    return int(response.json()["id"])
+{% else %}
+    return None
+{% endif %}
+
+
+def collection(pid: int | None) -> str:
+{% if e.parent %}
+    return f"/{{ parent.plural }}/{pid}/{{ e.plural }}"
+{% else %}
+    return {{ e.collection | tojson }}
+{% endif %}
+
+
+def item(pid: int | None, row_id: int) -> str:
+    return f"{collection(pid)}/{row_id}"
+
+
+def create(
+    client: TestClient, headers: Headers, pid: int | None, n: int = 1, **overrides: Any
+) -> dict[str, Any]:
+    response = client.post(
+        collection(pid), json={**PAYLOADS[n - 1], **overrides}, headers=headers
+    )
+    assert response.status_code == 201, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+def test_every_operation_requires_a_token(client: TestClient) -> None:
+    calls: list[tuple[str, str, Any]] = [
+        ("POST", collection(1), PAYLOADS[0]),
+        ("GET", collection(1), None),
+        ("GET", item(1, 1), None),
+        ("PATCH", item(1, 1), {}),
+        ("DELETE", item(1, 1), None),
+{% for a in e.actions %}
+        ("POST", item(1, 1) + "/{{ a.name }}", None),
+{% endfor %}
+    ]
+    for method, url, body in calls:
+        missing = client.request(method, url, json=body)
+        assert missing.status_code == 401, (method, url, missing.text)
+        bad = client.request(
+            method, url, json=body, headers={"Authorization": "Bearer not-a-real-token"}
+        )
+        assert bad.status_code == 401, (method, url, bad.text)
+
+
+def test_create_then_read_back(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+    created = create(client, user_a, pid)
+    for key, value in PAYLOADS[0].items():
+        if key not in SKIP_ECHO:
+            assert created[key] == value, key
+{% if e.parent %}
+    assert created["{{ e.parent_param }}"] == pid
+{% endif %}
+{% for t in transitions %}
+    assert created["{{ t.field }}"] == {{ t.start | tojson }}
+{% endfor %}
+    fetched = client.get(item(pid, created["id"]), headers=user_a)
+    assert fetched.status_code == 200
+    assert fetched.json() == created
+    assert created in client.get(collection(pid), headers=user_a).json()
+
+
+def test_update_changes_only_the_given_fields(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+    created = create(client, user_a, pid)
+    url = item(pid, created["id"])
+    assert client.patch(url, json={}, headers=user_a).json() == created
+    if PATCH:
+        response = client.patch(url, json=PATCH, headers=user_a)
+        assert response.status_code == 200, response.text
+        updated = response.json()
+        for key, value in created.items():
+            if key not in SKIP_ECHO:
+                assert updated[key] == PATCH.get(key, value), key
+        assert client.get(url, headers=user_a).json() == updated
+
+
+def test_delete_removes_the_row(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+    created = create(client, user_a, pid)
+    url = item(pid, created["id"])
+    assert client.delete(url, headers=user_a).status_code == 204
+    assert client.get(url, headers=user_a).status_code == 404
+    assert created not in client.get(collection(pid), headers=user_a).json()
+    assert client.delete(url, headers=user_a).status_code == 404
+
+
+def test_lists_are_paged_in_id_order(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+    ids = [create(client, user_a, pid, n)["id"] for n in (1, 2, 3)]
+
+    def page(**params: int) -> list[int]:
+        response = client.get(collection(pid), params=params, headers=user_a)
+        assert response.status_code == 200, response.text
+        return [row["id"] for row in response.json()]
+
+    assert page() == ids
+    assert page(limit=2) == ids[:2]
+    assert page(limit=2, offset=2) == ids[2:]
+    assert page(offset=3) == []
+    for params in ({"limit": 0}, {"limit": LIMIT_MAX + 1}, {"offset": -1}):
+        response = client.get(collection(pid), params=params, headers=user_a)
+        assert response.status_code == 422, (params, response.text)
+{% if e.owner == "user" %}
+
+
+def test_users_only_see_their_own_rows(
+    client: TestClient, user_a: Headers, user_b: Headers
+) -> None:
+    pid = new_parent(client, user_a)
+    created = create(client, user_a, pid)
+    url = item(pid, created["id"])
+    assert client.get(url, headers=user_b).status_code == 404
+    assert client.patch(url, json={}, headers=user_b).status_code == 404
+    assert client.delete(url, headers=user_b).status_code == 404
+{% for a in e.actions %}
+    assert client.post(url + "/{{ a.name }}", headers=user_b).status_code == 404
+{% endfor %}
+{% if e.parent %}
+    assert client.get(collection(pid), headers=user_b).status_code == 404
+    assert client.post(collection(pid), json=PAYLOADS[0], headers=user_b).status_code == 404
+{% else %}
+    assert client.get(collection(pid), headers=user_b).json() == []
+{% endif %}
+    assert client.get(url, headers=user_a).json() == created  # nothing user B did changed it
+{% else %}
+
+
+def test_rows_are_shared_between_users(
+    client: TestClient, user_a: Headers, user_b: Headers
+) -> None:
+    pid = new_parent(client, user_a)
+    created = create(client, user_a, pid)
+    assert client.get(item(pid, created["id"]), headers=user_b).json() == created
+    assert created in client.get(collection(pid), headers=user_b).json()
+{% endif %}
+{% if e.parent %}
+
+
+def test_deleting_the_parent_deletes_its_{{ e.plural }}(
+    client: TestClient, user_a: Headers
+) -> None:
+    pid = new_parent(client, user_a)
+    create(client, user_a, pid, 1)
+    create(client, user_a, pid, 2)
+    assert client.delete(f"{PARENT_COLLECTION}/{pid}", headers=user_a).status_code == 204
+    with engine.connect() as connection:
+        count = connection.execute(text("SELECT count(*) FROM {{ e.table }}")).scalar_one()
+    assert count == 0
+{% endif %}
+{% for g in guards %}
+
+
+def test_guard_{{ g.slug }}(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+{% if g.subject == "parent" and g.op == "create" %}
+
+    def set_parent(value: Any) -> None:
+        response = client.patch(
+            f"{PARENT_COLLECTION}/{pid}", json=dict({{ g.field }}=value), headers=user_a
+        )
+        assert response.status_code == 200, response.text
+
+    set_parent({{ g.literal | pyrepr }})
+    rejected = client.post(collection(pid), json=PAYLOADS[0], headers=user_a)
+    assert rejected.status_code == {{ g.status }}, rejected.text
+    assert rejected.json()["rule"] == {{ g.id | tojson }}
+{% if g.alt is not none %}
+    set_parent({{ g.alt | pyrepr }})
+    accepted = client.post(collection(pid), json=PAYLOADS[0], headers=user_a)
+    assert accepted.status_code == 201, accepted.text
+{% endif %}
+{% elif g.subject == "parent" %}
+    created = create(client, user_a, pid)
+    url = item(pid, created["id"])
+    flipped = client.patch(
+        f"{PARENT_COLLECTION}/{pid}", json=dict({{ g.field }}={{ g.literal | pyrepr }}), headers=user_a
+    )
+    assert flipped.status_code == 200, flipped.text
+{{ op_call(g) }}
+{% elif g.op == "create" %}
+    rejected = client.post(
+        collection(pid),
+        json={**PAYLOADS[0], "{{ g.field }}": {{ g.literal | pyrepr }}},
+        headers=user_a,
+    )
+    assert rejected.status_code == {{ g.status }}, rejected.text
+    assert rejected.json()["rule"] == {{ g.id | tojson }}
+{% else %}
+    created = create(client, user_a, pid, {{ g.field }}={{ g.literal | pyrepr }})
+    url = item(pid, created["id"])
+{{ op_call(g) }}
+{% endif %}
+{% endfor %}
+{% for t in transitions %}
+
+
+def test_{{ t.field }}_cannot_be_set_when_creating(client: TestClient, user_a: Headers) -> None:
+    pid = new_parent(client, user_a)
+    response = client.post(
+        collection(pid), json={**PAYLOADS[0], "{{ t.field }}": {{ t.start | tojson }}}, headers=user_a
+    )
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize(("steps", "target"), {{ t.moves | pyrepr }})
+def test_allowed_{{ t.field }}_moves(
+    client: TestClient, user_a: Headers, steps: tuple[str, ...], target: str
+) -> None:
+    pid = new_parent(client, user_a)
+    url = item(pid, create(client, user_a, pid)["id"])
+    for step in [*steps, target]:
+        response = client.patch(url, json={"{{ t.field }}": step}, headers=user_a)
+        assert response.status_code == 200, (step, response.text)
+        assert response.json()["{{ t.field }}"] == step
+    assert client.get(url, headers=user_a).json()["{{ t.field }}"] == target
+
+
+@pytest.mark.parametrize(("steps", "target"), {{ t.bad | pyrepr }})
+def test_disallowed_{{ t.field }}_moves_are_rejected(
+    client: TestClient, user_a: Headers, steps: tuple[str, ...], target: str
+) -> None:
+    pid = new_parent(client, user_a)
+    url = item(pid, create(client, user_a, pid)["id"])
+    for step in steps:
+        assert client.patch(url, json={"{{ t.field }}": step}, headers=user_a).status_code == 200
+    current = client.get(url, headers=user_a).json()["{{ t.field }}"]
+    response = client.patch(url, json={"{{ t.field }}": target}, headers=user_a)
+    assert response.status_code == 409, response.text
+    assert response.json()["rule"] == {{ t.rule_id | tojson }}
+    assert client.get(url, headers=user_a).json()["{{ t.field }}"] == current
+{% endfor %}
