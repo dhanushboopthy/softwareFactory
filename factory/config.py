@@ -64,6 +64,7 @@ ENTITIES_READ_ONLY: tuple[str, ...] = (
     "alembic.ini",
     "Dockerfile",
     "compose.yaml",
+    ".dockerignore",
 )
 
 # DDL strings agents may not write under the entities profile. A tripwire, not the enforcement:
@@ -83,12 +84,26 @@ class FactoryConfig:
     max_tool_calls_per_iter: int = 20
     max_lines_changed_per_iter: int = 400
     test_writer_max_attempts: int = 3
+    spec_writer_max_attempts: int = 3  # `factory draft`: tries to produce a valid entities file
     llm_max_output_tokens: int = 32_000
 
     # Sandbox
     command_timeout_s: int = 120
     setup_timeout_s: int = 600
     server_start_timeout_s: int = 30
+
+    # Entities-profile budgets scale with the work the LLM does (rules + actions), R18:
+    # limit = min(cap, base + per_item * items). Used by scaled_for(); the OpenAPI profile keeps
+    # the fixed limits above.
+    budget_iters_base: int = 4
+    budget_iters_per_item: int = 2
+    budget_iters_cap: int = 16
+    budget_lines_base: int = 150
+    budget_lines_per_item: int = 100
+    budget_lines_cap: int = 600
+    budget_cost_base: float = 1.0
+    budget_cost_per_item: float = 0.75
+    budget_cost_cap: float = 10.0
 
     # Generated list endpoints (entities profile): `limit` default and maximum (R10, decision D12).
     list_limit_default: int = 50
@@ -100,6 +115,12 @@ class FactoryConfig:
     postgres_image: str = "postgres:16-alpine"
     postgres_bin_dir: str = "/usr/lib/postgresql/16/bin"
     postgres_ready_timeout_s: int = 60
+
+    # Deploy check (entities profile): `docker compose up` of the generated project, then /health
+    # and one authenticated round trip. Needs Docker, so it is skipped when disabled (for example
+    # FACTORY_DEPLOY_CHECK=0 on a machine that can only run the local Postgres backend).
+    deploy_check: bool = True
+    deploy_timeout_s: int = 600
 
     # Run budget (loop stops with status "budget_exhausted" when either is exceeded)
     max_tokens_per_run: int = 2_000_000
@@ -170,6 +191,23 @@ class FactoryConfig:
             forbidden_patterns=(*self.forbidden_patterns, *ENTITIES_DDL_PATTERNS),
         )
 
+    def scaled_for(self, llm_items: int) -> FactoryConfig:
+        """This config with iteration, line and cost limits sized for ``llm_items`` rules and
+        actions (base + per item, capped). Only the entities profile calls this."""
+        if llm_items < 0:
+            raise ValueError("llm_items must not be negative")
+        return replace(
+            self,
+            max_iters=min(self.budget_iters_cap,
+                          self.budget_iters_base + self.budget_iters_per_item * llm_items),
+            max_lines_changed_per_iter=min(
+                self.budget_lines_cap,
+                self.budget_lines_base + self.budget_lines_per_item * llm_items),
+            max_cost_usd_per_run=min(
+                self.budget_cost_cap,
+                round(self.budget_cost_base + self.budget_cost_per_item * llm_items, 6)),
+        )
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> FactoryConfig:
         """Build a config from defaults, overriding scalar fields from ``FACTORY_<FIELD>`` vars."""
@@ -182,7 +220,9 @@ class FactoryConfig:
             if raw is None:
                 continue
             # With `from __future__ import annotations`, f.type is the annotation string.
-            if f.type == "int":
+            if f.type == "bool":
+                overrides[f.name] = raw.strip().lower() in ("1", "true", "yes", "on")
+            elif f.type == "int":
                 overrides[f.name] = int(raw)
             elif f.type == "float":
                 overrides[f.name] = float(raw)

@@ -45,6 +45,11 @@ def _render(name: str, **ctx: object) -> tuple[str, str]:
     return _env.get_template(name).render(**ctx).strip() + "\n", template_hash(name)
 
 
+def render_prompt(name: str, **ctx: object) -> tuple[str, str]:
+    """Render prompt template ``name``; returns (text, template hash for the run report)."""
+    return _render(name, **ctx)
+
+
 def file_tree(project: Path, cfg: FactoryConfig) -> str:
     lines = []
     for p in sorted(project.rglob("*")):

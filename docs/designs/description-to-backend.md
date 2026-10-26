@@ -147,7 +147,6 @@ the model controls.
 
   These sit alongside the test writer's suite, and neither agent can edit them.
 - **Static gate:** resources are grouped by entity from `entities.yaml`, not by path segment.
-- **Cheat probe:** the hardcoded implementation also has to fail the ownership tests.
 - **Schemathesis:** the harness signs up a user and passes the token. Stateful phases follow the
   generated `links`.
 - **Budgets:** iterations, cost and changed-line limits scale with the operation count. The formula
@@ -1010,7 +1009,7 @@ Leave phasing as is for now.
 State: approved
 Actual answer: A) Apply: gate Phase 8 (D19, 2026-10-25)
 Accepted scope: Phase 7 (entities format and expand) may start now; Phase 8 (project template v2) starts only after the Assignment is done and its answers are written into Open Question 1 of this doc.
-History: none
+History: none until 2026-10-26, when the owner chose to build Phase 8 and the rest before the Assignment (see "Built as" below). The gate's reason still stands: the format has not been shown to an engineer with a real project description, so Open Question 1 is unanswered and is tracked in TODOS.md.
 
 ### R16: Auth backend seam
 Finding: OV#7 (part 2), Medium, confidence 6/10, plan `auth: jwt` + R5 accepted scope, reviewer: Claude subagent, verified by parent
@@ -1379,31 +1378,31 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Surfaced by: Section 3 regression (R7, D9); OV#9 (R17, D21)
   - Files: factory/config.py, factory/pipeline.py, tests/test_config.py, tests/test_guardrails.py
   - Verify: `uv run pytest` and `FACTORY_E2E=1 uv run pytest tests/test_e2e.py` green with unchanged assertions
-- [ ] **T2 (P1, human: ~3 days / CC: ~3 hrs)** — entities — Pydantic entities schema: required owner, one nesting level, structured rules, transitions, guards, auth enum, approved flag
+- [x] **T2 (P1, human: ~3 days / CC: ~3 hrs)** — entities — Pydantic entities schema: required owner, one nesting level, structured rules, transitions, guards, auth enum, approved flag
   - Surfaced by: R11 (D14), R12 (D15), R14 (D17), R16 (D20), R1 (D18)
   - Files: factory/entities.py, tests/test_entities.py, examples/tasks/entities.yaml
   - Verify: table-driven validation tests, one row per rejection
-- [ ] **T3 (P1, human: ~3 days / CC: ~3 hrs)** — entities — `expand()` to OpenAPI: tag per entity, rule and guard statuses, limit/offset, links
+- [x] **T3 (P1, human: ~3 days / CC: ~3 hrs)** — entities — `expand()` to OpenAPI: tag per entity, rule and guard statuses, limit/offset, links
   - Surfaced by: R2 necessary work, R10 (D12), R11 (D14)
   - Files: factory/entities.py, tests/test_expand.py, tests/fixtures/expand/tasks.openapi.yaml
   - Verify: golden comparison plus `lint_spec` returns ok on the generated spec
-- [ ] **T4 (P1, human: ~1.5 weeks / CC: ~1 day)** — templates — Project template v2 (after the R15 gate)
+- [x] **T4 (P1, human: ~1.5 weeks / CC: ~1 day)** — templates — Project template v2 (after the R15 gate)
   - Surfaced by: R2 (D5, D13), R3 (D4), R5 (D7), R9 (D11), R12 (D15), R16 (D20), OV#2, OV#11, OV#15, OV#18, OV#19
   - Templates: orm.py, Alembic env and initial revision with indexes, read-only db.py, crud, routes calling hooks with parent and row, rules stubs, settings, auth seam, generated guards and transitions
   - Generated tests: ownership tests (including action routes) in tests/generated/
   - Test config: conftest with TRUNCATE plus `lock_timeout`, and hash cost from the environment
   - Files: factory/templates/project/*, factory/stations/scaffold.py
   - Verify: `alembic check` unit test on the sample; generated tests pass against a correct build
-- [ ] **T5 (P1, human: ~2 days / CC: ~2 hrs)** — harness — `harness/postgres.py`: one container per run, a migrated template database, a clone per check
+- [x] **T5 (P1, human: ~2 days / CC: ~2 hrs)** — harness — `harness/postgres.py`: one container per run, a migrated template database, a clone per check
   - Also: fail fast when Docker is unreachable, bind to 127.0.0.1, clean up in a `finally`, pass the Docker environment variables through
   - Surfaced by: Section 1 #4, OV#14, R9 (D11)
   - Files: factory/harness/postgres.py, factory/config.py, tests/test_postgres.py
   - Verify: unit tests for the generated docker command line; e2e on a real container
-- [ ] **T6 (P1, human: ~1 day / CC: ~1 hr)** — harness — checks.py: Postgres URL, a per-run JWT secret, a signup token passed via `-H Authorization`
+- [x] **T6 (P1, human: ~1 day / CC: ~1 hr)** — harness — checks.py: Postgres URL, a per-run JWT secret, a signup token passed via `-H Authorization`
   - Surfaced by: R5 (D7), Section 1 architecture
   - Files: factory/harness/checks.py, tests/test_checks_parsing.py
   - Verify: unit test of the Schemathesis command line; e2e tasks contract passes
-- [ ] **T7 (P1, human: ~3 days / CC: ~3 hrs)** — gates — Gates v2
+- [x] **T7 (P1, human: ~3 days / CC: ~3 hrs)** — gates — Gates v2
   - Changes:
     - entity grouping, and a test required for every rule id;
     - red check and cheat probe run on the writer's tests only;
@@ -1413,32 +1412,32 @@ Synthesized from this review's findings. Each task derives from a specific findi
   - Surfaced by: R4 (D6), R11 (D14), R13 (D16), R3 (D4), OV#2, OV#17
   - Files: factory/harness/test_quality.py, factory/harness/guardrails.py, factory/config.py, factory/stations/test_writer.py, tests/test_test_quality.py, tests/test_guardrails.py
   - Verify: unit tests, plus a scripted trivial-suite scenario that gets rejected
-- [ ] **T8 (P1, human: ~1 day / CC: ~1 hr)** — pipeline — Build accepts entities files
+- [x] **T8 (P1, human: ~1 day / CC: ~1 hr)** — pipeline — Build accepts entities files
   - Changes: refuse when not approved, refuse `--from`, use the `app:` value as run id, record the computed budgets
   - Surfaced by: R1 (D18), R19 (D23), R18 (D22), OV#20
   - Files: factory/pipeline.py, factory/cli.py, tests/test_cli.py
   - Verify: CLI unit tests for each refusal message
-- [ ] **T9 (P1, human: ~2 days / CC: ~2 hrs)** — fixtures — Sample and scenarios
+- [x] **T9 (P1, human: ~2 days / CC: ~2 hrs)** — fixtures — Sample and scenarios
   - Changes: the tasks sample (description, entities with the project-limit rule), scripted tasks and tasks-cheat scenarios, e2e tests
   - Surfaced by: R12 necessary work, Success Criteria
   - Files: examples/tasks/, tests/fixtures/scripted/tasks_v1/, tests/fixtures/scripted/tasks_cheat/, tests/test_e2e.py
   - Verify: `FACTORY_E2E=1 uv run pytest tests/test_e2e.py`
-- [ ] **T10 (P1, human: ~2 days / CC: ~2 hrs)** — spec_writer — `factory draft`
+- [x] **T10 (P1, human: ~2 days / CC: ~2 hrs)** — spec_writer — `factory draft`
   - Behavior: single call with no tools; refuses oversize input; retries on validation errors up to `spec_writer_max_attempts`; writes `approved: false`
   - Surfaced by: R6 (D8, D24), R1 (D18)
   - Files: factory/stations/spec_writer.py, factory/templates/prompts/spec_writer.*.j2, factory/cli.py, factory/config.py, tests/fixtures/scripted/tasks_draft/
   - Verify: scripted invalid-then-valid scenario with `expect:`
-- [ ] **T11 (P2, human: ~1 day / CC: ~45 min)** — eval — Opt-in live eval for the spec_writer prompt
+- [x] **T11 (P2, human: ~1 day / CC: ~45 min)** — eval — Opt-in live eval for the spec_writer prompt
   - Surfaced by: R8 (D10)
   - Files: tests/test_eval_spec_writer.py
   - Verify: `FACTORY_EVAL=1 uv run pytest tests/test_eval_spec_writer.py`
-- [ ] **T12 (P2, human: ~2 days / CC: ~2 hrs)** — contract — Deploy check in contract.py, plus report fields
+- [x] **T12 (P2, human: ~2 days / CC: ~2 hrs)** — contract — Deploy check in contract.py, plus report fields
   - Deploy check: compose project per run, `down -v` in a `finally`, its own timeout, secret passed through the environment
   - Report fields: approval flag, computed budgets, both cheat results
   - Surfaced by: OV#13, R13 (D16), R18 (D22)
   - Files: factory/stations/contract.py, factory/report/*, factory/templates/report/report.md.j2
   - Verify: e2e reports deploy healthy; report unit test
-- [ ] **T13 (P2, human: ~2 hrs / CC: ~15 min)** — docs — Amend AGENTS.md rule 2; update the README pipeline and roadmap; delete the dead cheat-probe line in this plan
+- [x] **T13 (P2, human: ~2 hrs / CC: ~15 min)** — docs — Amend AGENTS.md rule 2; update the README pipeline and roadmap; delete the dead cheat-probe line in this plan
   - Surfaced by: Premise 1, OV#4
   - Files: AGENTS.md, README.md, docs/designs/description-to-backend.md
   - Verify: read-through
@@ -1463,6 +1462,39 @@ None.
 - Outside voice: Codex not installed; native fallback (Claude subagent, Plan type) completed with 20 findings; outside coverage unavailable
 - Parallelization: 3 lanes, 2 parallel / 1 sequential
 - Lake Score: 12/21
+
+## Built as (2026-10-26)
+
+T1-T13 are implemented; the step-by-step plan used is `docs/plans/v2-implementation-plan.md`. Where
+the build chose differently from, or more precisely than, the text above:
+
+- **R15 (Assignment gate):** not honoured. The owner chose to build everything first, so Open
+  Question 1 is still unanswered by evidence (TODOS.md).
+- **R2/R13 (cheat variants):** one template renders both fake rule sets (`cheat_rules.py.j2`,
+  `render_cheat_rules(doc, entity, mode)`). A "never reject" fake leaves an action's row unchanged,
+  so a writer test that asserts an action's *effect* is caught by it; only a one-sided suite that
+  checks status codes alone survives it.
+- **R12 (guards):** `when: "<field> == x"` is evaluated against the request body on `create` and
+  the stored row on update, delete and actions. Sample rows used by the generated tests avoid every
+  guard literal, so a guard cannot block the generic tests; a spec whose guards make a state
+  unreachable is self-contradictory and its generated tests will fail.
+- **R10 (paging):** `offset` is also bounded (int64 maximum) in the spec and the route; Postgres
+  fails on a larger OFFSET, which would surface as a 500. The limits live in `config.py`
+  (`list_limit_default`, `list_limit_max`) and flow into both the OpenAPI and the routes.
+- **R9/OV#18:** the per-test reset is one `TRUNCATE ... RESTART IDENTITY CASCADE` with
+  `lock_timeout`; the harness lowers the password-hash cost for checks.
+- **R3:** `app/db.py` is generated and read-only; `ENTITIES_READ_ONLY` in `config.py` names every
+  generated path so the report says `read_only`, not just "not allowed".
+- **R18 (budgets):** `base + per_item x (rules + actions)`, capped: iterations 4 + 2n (cap 16),
+  changed lines 150 + 100n (cap 600), cost $1 + $0.75n (cap $10); all in `config.py`, caps
+  overridable (`FACTORY_BUDGET_*_CAP`), recorded in `run.json`.
+- **Generated ruff config** has no import-sorting rule, so the coder is never failed on cosmetics.
+- **Postgres:** `postgres_backend` is `docker` (default) or `local` (PostgreSQL binaries), so the
+  checks run on machines without a Docker daemon; the `docker compose` deploy check can be turned
+  off (`deploy_check`) for the same reason. The Docker paths have not been run (TODOS.md).
+- **Q4 (Schemathesis and auth):** with a signed-up user's token, `--checks all` runs 1054 cases on
+  the tasks sample with no failures; documented 409s from rules, guards and transitions are not
+  flagged, so no per-project Schemathesis configuration was needed.
 
 ## GSTACK REVIEW REPORT
 

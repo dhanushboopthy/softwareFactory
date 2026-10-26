@@ -66,12 +66,24 @@ def build(
         str | None, typer.Option(help="Explicit run id (default: timestamp).")
     ] = None,
 ) -> None:
-    """Lint, scaffold, test, implement, verify and package a backend from SPEC."""
+    """Lint, scaffold, test, implement, verify and package a backend from SPEC.
+
+    SPEC is an OpenAPI 3.x file, or an approved entities file (`approved: true`).
+    """
     from factory.llm import ProviderConfigError, get_provider
-    from factory.pipeline import BuildOptions, latest_passed_run
+    from factory.pipeline import (
+        INCREMENTAL_REFUSAL,
+        BuildOptions,
+        IncrementalNotSupported,
+        detect_profile,
+        latest_passed_run,
+    )
     from factory.pipeline import build as run_build
 
     cfg = FactoryConfig.from_env()
+    if detect_profile(spec) == "entities" and (from_run or incremental):
+        _log(INCREMENTAL_REFUSAL)
+        raise typer.Exit(code=2)
     previous = from_run
     if incremental and previous is None:
         previous = latest_passed_run(cfg, spec.name)
@@ -85,12 +97,72 @@ def build(
             _log(f"LLM provider not configured: {exc}\n"
                  "Set LLM_PROVIDER in .env, or pass --no-llm for the deterministic pipeline.")
             raise typer.Exit(code=2) from exc
-    record = run_build(
-        BuildOptions(spec_path=spec, use_llm=not no_llm, previous_run=previous, run_id=run_id),
-        cfg, provider, log=_log,
-    )
+    try:
+        record = run_build(
+            BuildOptions(spec_path=spec, use_llm=not no_llm, previous_run=previous,
+                         run_id=run_id),
+            cfg, provider, log=_log,
+        )
+    except IncrementalNotSupported as exc:  # also guards callers that skip the check above
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
     typer.echo(str(cfg.runs_dir / record.run_id / "report.md"))
     raise typer.Exit(code=0 if record.status == "passed" else 1)
+
+
+@app.command()
+def draft(
+    docs: Annotated[
+        list[Path],
+        typer.Argument(exists=True, dir_okay=False, readable=True,
+                       help="The project description and design documents (text files)."),
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the draft entities.yaml.")
+    ],
+    force: Annotated[bool, typer.Option("--force", help="Overwrite OUTPUT if it exists.")] = False,
+) -> None:
+    """Draft an entities.yaml from documents, for a human to review and approve.
+
+    The draft is written with `approved: false`; `factory build` refuses it until you read it and
+    change that to `approved: true`.
+    """
+    from factory.llm import ProviderConfigError, get_provider
+    from factory.llm.base import LLMError
+    from factory.stations.spec_writer import DraftTooLarge
+    from factory.stations.spec_writer import draft as run_draft
+
+    if output.exists() and not force:
+        _log(f"{output} already exists; pass --force to overwrite it")
+        raise typer.Exit(code=2)
+    cfg = FactoryConfig.from_env()
+    try:
+        provider = get_provider()
+    except ProviderConfigError as exc:
+        _log(f"LLM provider not configured: {exc}\nSet LLM_PROVIDER in .env.")
+        raise typer.Exit(code=2) from exc
+    try:
+        result = run_draft(docs, output, cfg, provider, log=_log)
+    except (DraftTooLarge, ValueError) as exc:  # input problems; no model call was made
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
+    except LLMError as exc:
+        _log(f"LLM call failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    cost = "n/a" if result.usage.cost_usd is None else f"${result.usage.cost_usd:.4f}"
+    _log(f"{result.attempts} attempt(s), {result.usage.input_tokens} in / "
+         f"{result.usage.output_tokens} out tokens, {cost}")
+    if result.path is None:
+        _log("no valid entities file after all attempts; the last problems were:")
+        for problem in result.errors:
+            _log(f"  - {problem}")
+        raise typer.Exit(code=1)
+    typer.echo(str(result.path))
+    if result.gaps:
+        _log("The description asks for things the format cannot express (see `gaps:`):")
+        for gap in result.gaps:
+            _log(f"  - {gap}")
+    _log("Review the file, then set `approved: true` and run `factory build`.")
 
 
 @app.command()

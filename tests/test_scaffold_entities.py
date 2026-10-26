@@ -183,6 +183,35 @@ def test_errors_module_lists_every_declared_rule() -> None:
         assert f'"{rule_id}": 409' in errors
 
 
+def test_compose_file_deploys_the_app_with_its_own_database() -> None:
+    compose = yaml.safe_load(static_files_v2(example())["compose.yaml"])
+    db, app_service = compose["services"]["db"], compose["services"]["app"]
+    assert set(compose["services"]) == {"db", "app"}
+    assert "ports" not in db                                      # the database is not published
+    assert app_service["ports"] == ["127.0.0.1:${APP_PORT:-8000}:8000"]   # app: localhost only
+    assert app_service["depends_on"]["db"]["condition"] == "service_healthy"
+    assert "healthcheck" in db and "healthcheck" in app_service
+    assert db["environment"]["POSTGRES_PASSWORD"].startswith("${POSTGRES_PASSWORD:?")
+    assert app_service["environment"]["JWT_SECRET"].startswith("${JWT_SECRET:?")  # no default
+    assert "@db:5432" in app_service["environment"]["DATABASE_URL"]
+    assert "change-me" not in str(compose)                        # no literal secret anywhere
+
+
+def test_dockerfile_applies_migrations_then_serves_as_a_normal_user() -> None:
+    files = static_files_v2(example())
+    dockerfile = files["Dockerfile"]
+    assert "alembic upgrade head && uvicorn app.main:app" in dockerfile
+    assert "USER app" in dockerfile and "uv sync --no-dev" in dockerfile
+    assert "PYTHONDONTWRITEBYTECODE=1" in dockerfile
+    ignored = files[".dockerignore"].split()
+    assert {".venv", ".env", ".git", "tests", "client"} <= set(ignored)  # no secrets or local state
+
+
+def test_env_example_covers_the_compose_variables() -> None:
+    env = static_files_v2(example())[".env.example"]
+    assert "POSTGRES_PASSWORD=\n" in env and "JWT_SECRET=\n" in env
+
+
 def test_env_example_has_no_secret() -> None:
     env = static_files_v2(example())[".env.example"]
     assert "JWT_SECRET=\n" in env
@@ -249,7 +278,8 @@ def test_scaffold_writes_the_project(tmp_path: Path) -> None:
 # --- T4b-T4d: auth, CRUD, routes, hooks, cheat variants, generated tests -------------------------
 
 EXPECTED_FILES = {
-    ".env.example", "AGENTS.md", "alembic.ini", "pyproject.toml",
+    ".env.example", "AGENTS.md", "alembic.ini", "pyproject.toml", "Dockerfile", "compose.yaml",
+    ".dockerignore",
     "migrations/env.py", "migrations/script.py.mako", "migrations/versions/0001_initial.py",
     "app/__init__.py", "app/auth.py", "app/crud/__init__.py", "app/crud/project.py",
     "app/crud/task.py", "app/db.py", "app/errors.py", "app/main.py", "app/orm.py",
@@ -636,6 +666,7 @@ def live_ledger(tmp_path_factory: pytest.TempPathFactory) -> Iterator[LiveProjec
 
 
 WRITER_FILE = "tests/test_project.py"
+TASKS_FILES = ROOT / "tests" / "fixtures" / "scripted" / "tasks_v1" / "files"
 _HELPER = '''
 import pytest
 
@@ -648,19 +679,7 @@ SUITES = {
     # Passes against anything: no rule markers, no action call, no assertion about the app.
     "trivial": "def test_ok():\n    assert True\n",
     # Only checks rejections (and tolerates a missing row), so "always reject" cannot fail it.
-    "reject_only": _HELPER + '''
-@pytest.mark.rule("project-limit")
-def test_the_21st_project_is_rejected(client, user_a):
-    for i in range(21):
-        response = create(client, user_a, f"p{i}")
-    assert response.status_code == 409
-    assert response.json()["rule"] == "project-limit"
-
-
-@pytest.mark.rule("already-archived")
-def test_archive_url_exists(client, user_a):
-    assert client.post("/projects/1/archive", headers=user_a).status_code in (404, 409)
-''',
+    "reject_only": (TASKS_FILES / "test_project_reject_only.py").read_text(),
     # Only checks acceptance (status codes, not the action's effect), so "never reject" cannot
     # fail it. A suite that asserted `archived is True` would be caught by that fake as well.
     "accept_only": _HELPER + '''
@@ -675,32 +694,7 @@ def test_archive_is_accepted(client, user_a):
     assert client.post(f"/projects/{pid}/archive", headers=user_a).status_code == 200
 ''',
     # Both sides of both rules, and the effect of the action.
-    "full": _HELPER + '''
-@pytest.mark.rule("project-limit")
-def test_the_21st_active_project_is_rejected(client, user_a):
-    for i in range(20):
-        assert create(client, user_a, f"p{i}").status_code == 201
-    response = create(client, user_a, "one too many")
-    assert response.status_code == 409
-    assert response.json()["rule"] == "project-limit"
-
-
-@pytest.mark.rule("project-limit")
-def test_archived_projects_and_other_users_do_not_count(client, user_a, user_b):
-    for i in range(20):
-        assert create(client, user_a, f"a{i}", archived=True).status_code == 201
-    assert create(client, user_a, "active").status_code == 201
-    assert create(client, user_b, "b1").status_code == 201
-
-
-@pytest.mark.rule("already-archived")
-def test_archiving_twice_is_a_conflict(client, user_a):
-    pid = create(client, user_a).json()["id"]
-    first = client.post(f"/projects/{pid}/archive", headers=user_a)
-    assert first.status_code == 200 and first.json()["archived"] is True
-    second = client.post(f"/projects/{pid}/archive", headers=user_a)
-    assert second.status_code == 409 and second.json()["rule"] == "already-archived"
-''',
+    "full": (TASKS_FILES / "test_project.py").read_text(),
 }
 
 

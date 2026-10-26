@@ -1,0 +1,70 @@
+# Scripted spec_writer for `factory draft examples/tasks/description.md`:
+#   attempt 1: chatty answer whose YAML forgets `owner:` on Project and claims `approved: true`;
+#   attempt 2: must have received the validator's error and the previous answer; returns a valid file.
+agents:
+  spec_writer:
+    - text: |
+        Here is the entities file for your task tracker:
+
+        ```yaml
+        approved: true
+        app: tasks
+        entities:
+          Project:
+            fields:
+              name: {type: str, min: 1, max: 200}
+              archived: {type: bool, default: false}
+        gaps: []
+        ```
+
+        Let me know if anything is missing.
+    - expect:
+        - "Your previous answer was invalid"
+        - "top-level entities must declare owner"
+        - "name: {type: str, min: 1, max: 200}"
+        - "Tasks backend"
+      text: |
+        ```yaml
+        approved: true
+        app: tasks
+        title: Tasks
+        auth: jwt
+        entities:
+          Project:
+            owner: user
+            text: A project owned by the user who created it.
+            fields:
+              name: {type: str, min: 1, max: 200}
+              archived: {type: bool, default: false}
+            rules:
+              - id: project-limit
+                text: A user may have at most 20 non-archived projects; creating the 21st returns 409.
+                on: [Project.create]
+                status: 409
+              - id: already-archived
+                text: Archiving a project that is already archived returns 409.
+                on: [Project.archive]
+                status: 409
+            actions:
+              archive:
+                text: Marks the project archived.
+                returns: Project
+          Task:
+            parent: Project
+            text: A unit of work inside a project.
+            fields:
+              title: {type: str, min: 1, max: 200}
+              status:
+                type: enum
+                values: [todo, doing, done]
+                default: todo
+                transitions: {todo: [doing], doing: [done]}
+              due: {type: date, optional: true}
+            guards:
+              - id: archived-project-rejects-tasks
+                on: Task.create
+                when: parent.archived == true
+                status: 409
+        gaps:
+          - "Paging of lists is generated for every list endpoint; it cannot be turned off."
+        ```

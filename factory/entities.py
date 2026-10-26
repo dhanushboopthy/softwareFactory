@@ -409,12 +409,17 @@ _EntitiesLoader.add_implicit_resolver(
     _BOOL_TAG, re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"), list("tTfF"))
 
 
-def load_entities_raw(path: Path) -> Any:
-    """The parsed YAML of an entities file, with the strict boolean rules above."""
+def load_entities_text(text: str) -> Any:
+    """The parsed YAML of entities text, with the strict boolean rules above."""
     try:
-        return yaml.load(path.read_text(), Loader=_EntitiesLoader)  # noqa: S506 - SafeLoader subclass
+        return yaml.load(text, Loader=_EntitiesLoader)  # noqa: S506 - a SafeLoader subclass
     except yaml.YAMLError as exc:
         raise EntitiesError([f"not valid YAML: {exc}"]) from exc
+
+
+def load_entities_raw(path: Path) -> Any:
+    """The parsed YAML of an entities file, with the strict boolean rules above."""
+    return load_entities_text(path.read_text())
 
 
 def load_entities(path: Path) -> EntitiesDoc:

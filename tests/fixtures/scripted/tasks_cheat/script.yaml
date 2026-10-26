@@ -1,0 +1,20 @@
+# Anti-cheating scenario for the entities profile: a good test suite, and a coder that only ever
+# ships rules that accept everything and an action that does nothing. The generated tests and the
+# project's CRUD still pass, but the writer's behaviour tests catch it, so the run must end `failed`.
+# Run with a small iteration cap (the test sets budget_iters_cap=2) to keep it short.
+agents:
+  test_writer:
+    - tool_calls:
+        - name: write_file
+          args: {path: tests/test_project.py, content_file: ../tasks_v1/files/test_project.py}
+    - text: Wrote the suite.
+  coder:
+    - tool_calls:
+        - name: write_file
+          args: {path: app/rules/project.py, content_file: files/rules_project_cheat.py}
+    - text: Implemented the rules.
+    - expect: ["test_the_21st_active_project_is_rejected"]
+      tool_calls:
+        - name: write_file
+          args: {path: app/rules/project.py, content_file: files/rules_project_cheat.py}
+    - text: Still accepting everything.

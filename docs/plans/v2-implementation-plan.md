@@ -5,10 +5,39 @@ Companion to `docs/designs/description-to-backend.md` (the approved design). The
 how to prove it works**. It is written so that each task can be handed to a fresh Claude session
 (e.g. Sonnet) on its own.
 
-Status on 2026-10-26: T1 is committed (`cde9f12`). **T2-T7 are done and verified** (uncommitted;
-ruff, mypy and 366 unit tests green; the real-database tests in `tests/test_scaffold_entities.py`
-and `tests/test_postgres.py` pass with `FACTORY_E2E=1 FACTORY_POSTGRES_BACKEND=local`; the three v1
-e2e tests still pass). Remaining: T8-T13.
+Status on 2026-10-26: **T1-T13 are all implemented** (T1 `cde9f12`, T2-T7 `c14fa78`, the rest in
+the commits after it). ruff and mypy are clean; the full suite with the real-database tests
+(`FACTORY_E2E=1 FACTORY_POSTGRES_BACKEND=local pytest`) is green, including the six end-to-end
+builds (three v1 tests with unchanged assertions, three entities scenarios).
+
+What is **not** verified, and why (see TODOS.md): the Docker Postgres backend and the
+`docker compose` deploy check (no Docker daemon was available; only `docker compose config` was
+run), a real LLM (everything uses scripted agents; the live eval is opt in), and the Assignment
+(R15; the format has not been shown to an engineer with a real description).
+
+### Decisions made while building T8-T10
+
+- **T8:** `pipeline.build` has two flows, `_build_openapi` (unchanged) and `_build_entities`
+  (lint incl. approval, scaffold, setup, postgres, test_writer or skip, baseline, coder, contract,
+  sdk). The Postgres server lives in an `ExitStack` for the whole run and is always stopped.
+  Refusals: invalid file and unapproved file are failed `lint` stations (messages in
+  `pipeline.NOT_APPROVED`); `--from`/`--incremental` raise `IncrementalNotSupported` before a run
+  directory exists, and the CLI turns that into exit 2. Budgets: `FactoryConfig.scaled_for(items)`
+  with the `budget_*` fields (env-overridable caps, e.g. `FACTORY_BUDGET_ITERS_CAP`), recorded in
+  `RunRecord.budgets`; `RunRecord` also has `profile` and `approved`.
+- **T9:** scenarios are `tests/fixtures/scripted/tasks_v1` (one-sided suite rejected by the
+  "always reject" probe, then a good one; a coder that edits generated files and ships an
+  off-by-one, then fixes it) and `tasks_cheat` (a coder that accepts everything; the run fails).
+  The e2e tests read `FACTORY_POSTGRES_BACKEND` (default `docker`).
+- **T10:** `factory draft DOCS... -o FILE [--force]` -> `stations/spec_writer.py`. One tool-less
+  call per attempt; the answer is validated by the build's own schema plus the OpenAPI lint; the
+  exact errors and the previous answer are fed back (`spec_writer_max_attempts`); only a valid
+  draft is written, with `approved: false` as its first key and a review banner; oversize input is
+  refused before any model call. The providers now omit the `tools` key when there are none (the
+  OpenAI API rejects an empty list). The system prompt's example is checked against
+  `examples/tasks/entities.yaml` by a test, so they cannot drift.
+- **Gotcha for anyone loading an entities file in Python:** use `load_entities_raw` /
+  `load_entities_text`, never `yaml.safe_load` (it reads an unquoted `on:` key as `True`).
 
 ### Decisions made while building T6-T7
 
