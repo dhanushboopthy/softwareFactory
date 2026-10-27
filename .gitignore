@@ -11,12 +11,19 @@ dist/
 .mypy_cache/
 .ruff_cache/
 
+# Project-local tool binaries and caches
+.tools/
+.uv-cache/
+
 # Secrets
 .env
 
 # Factory output: one folder per run, never committed
 runs/*
 !runs/.gitkeep
+
+# Drafts being reviewed in the UI
+drafts/
 
 # Local editor / agent settings
 .idea/

@@ -1,0 +1,99 @@
+{% extends "base.html.j2" %}
+{% block title %}Draft {{ d.id }} · API Factory{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+<section class="panel">
+  <h2>Draft <code>{{ d.id }}</code>
+    <span class="chip {{ 'run' if d.status == 'drafting' else ('ok' if d.status == 'ready' else 'bad') }}">{{ d.status }}</span></h2>
+  <table class="facts">
+    <tr><th>Source</th><td>{{ 'uploaded file' if d.kind == 'uploaded' else 'drafted by the AI' }}: {{ d.sources | join(', ') }}</td></tr>
+{% if d.kind == 'generated' %}
+    <tr><th>Model</th><td>{{ d.provider or '–' }} {{ d.model }}</td></tr>
+    <tr><th>Attempts</th><td>{{ d.attempts }}</td></tr>
+    <tr><th>Cost</th><td>{{ cost }}</td></tr>
+{% endif %}
+{% if d.build_run_id %}
+    <tr><th>Built as</th><td><a href="/runs/{{ d.build_run_id }}">{{ d.build_run_id }}</a></td></tr>
+{% endif %}
+  </table>
+{% if d.status == 'drafting' %}
+  <p>The AI is writing the file. This page refreshes by itself.</p>
+{% endif %}
+{% if d.message %}
+  <p class="hint">{{ d.message }}</p>
+{% endif %}
+{% if notice %}
+  <p class="chip ok">{{ notice }}</p>
+{% endif %}
+</section>
+
+{% if problems %}
+<div class="problems">
+  <strong>This file cannot be approved yet:</strong>
+  <ul>
+{% for p in problems %}
+    <li>{{ p }}</li>
+{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if summary %}
+<section class="panel">
+  <h2>{{ summary.title }} — read all of this before approving</h2>
+  <p class="muted">{{ summary.entities | length }} entities; {{ summary.llm_items }} piece(s) of
+     logic the AI agents will write.</p>
+{% for e in summary.entities %}
+  <details open>
+    <summary><strong>{{ e.name }}</strong> <span class="muted">owned by {{ e.owner }}{% if e.parent %}, inside {{ e.parent }}{% endif %}</span></summary>
+    <p>Fields: {{ e.fields | join(', ') }}</p>
+{% if e.rules %}
+    <p>Rules:</p>
+    <ul>{% for r in e.rules %}<li>{{ r }}</li>{% endfor %}</ul>
+{% endif %}
+{% if e.guards %}
+    <p>Guards:</p>
+    <ul>{% for g in e.guards %}<li>{{ g }}</li>{% endfor %}</ul>
+{% endif %}
+{% if e.actions %}
+    <p>Actions:</p>
+    <ul>{% for a in e.actions %}<li>{{ a }}</li>{% endfor %}</ul>
+{% endif %}
+  </details>
+{% endfor %}
+{% if summary.gaps %}
+  <div class="problems">
+    <strong>Gaps — asked for, but this format cannot express:</strong>
+    <ul>{% for g in summary.gaps %}<li>{{ g }}</li>{% endfor %}</ul>
+  </div>
+{% endif %}
+</section>
+{% endif %}
+
+{% if d.status != 'drafting' %}
+<section class="panel">
+  <h2>The file</h2>
+  <form method="post" action="/drafts/{{ d.id }}/save">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <textarea name="text" rows="28" spellcheck="false">{{ text }}</textarea>
+    <button type="submit">Save changes</button>
+    <a class="button" href="/drafts/{{ d.id }}/download">Download</a>
+  </form>
+</section>
+
+{% if d.status == 'ready' %}
+<section class="panel">
+  <h2>Approve and build</h2>
+  <form method="post" action="/drafts/{{ d.id }}/approve">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <input type="hidden" name="seen_sha" value="{{ seen_sha }}">
+    <label class="check"><input type="checkbox" name="confirm">
+      I have read every entity, owner, rule and gap above.</label>
+    <label class="check"><input type="checkbox" name="no_llm">
+      Generate and check only (no AI agents)</label>
+    <button type="submit">Approve and start build</button>
+  </form>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

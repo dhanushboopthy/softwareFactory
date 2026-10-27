@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from factory.config import FactoryConfig
+from factory.entities import EntitiesDoc
+from factory.harness.check_env import CheckEnv
 from factory.harness.guardrails import Guardrails
 from factory.harness.loop import Budget
 from factory.llm.base import LLMProvider
@@ -31,6 +33,9 @@ class RunContext:
     budget: Budget
     spec_changes: list[str] = field(default_factory=list)
     log: Callable[[str], None] = _noop
+    # Entities profile only: the approved document, and the database/secret checks run with.
+    entities: EntitiesDoc | None = None
+    check_env: CheckEnv | None = None
 
     def save(self) -> None:
         write_report(self.record, self.run_dir)

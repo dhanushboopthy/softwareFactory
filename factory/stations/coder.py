@@ -43,7 +43,8 @@ def run_coder(ctx: RunContext, baseline: list[CheckResult]) -> tuple[CoderStatus
         ctx.record.iterations.append(it)
         before = ctx.guard.writable_files(Role.CODER)
         bundle = build_coder_context(project=ctx.project, cfg=cfg, guard=ctx.guard, iteration=i,
-                                     last_errors=last_errors, spec_changes=ctx.spec_changes)
+                                     last_errors=last_errors, spec_changes=ctx.spec_changes,
+                                     entities=ctx.entities)
         ctx.record.prompt_versions.update(bundle.prompt_versions)
         record_violation = ctx.violation_recorder(it)
         executor = ToolExecutor(ctx.project, Role.CODER, ctx.guard, record_violation, i,
@@ -80,7 +81,8 @@ def run_coder(ctx: RunContext, baseline: list[CheckResult]) -> tuple[CoderStatus
             continue
 
         if stats.files:
-            results = checks.run_all(ctx.project, cfg, ctx.run_dir / "checks" / f"coder-{i:02d}")
+            results = checks.run_all(ctx.project, cfg, ctx.run_dir / "checks" / f"coder-{i:02d}",
+                                     check_env=ctx.check_env)
         else:
             results = last_results  # nothing changed, so re-running checks would be wasted time
         _log_checks(ctx, results)

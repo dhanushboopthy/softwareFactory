@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-RunStatus = Literal["running", "passed", "failed", "budget_exhausted", "error"]
+RunStatus = Literal["running", "passed", "failed", "budget_exhausted", "error", "cancelled"]
 StationStatus = Literal["passed", "failed", "skipped", "error"]
 
 
@@ -121,6 +121,11 @@ class RunRecord(BaseModel):
     ended_at: datetime | None = None
     status: RunStatus = "running"
     status_reason: str = ""
+    profile: str = "openapi"
+    # Entities profile: whether the input file carried `approved: true`, and the limits that were
+    # computed from the number of rules and actions (R1, R18).
+    approved: bool | None = None
+    budgets: dict[str, float] = Field(default_factory=dict)
     config: dict[str, Any] = Field(default_factory=dict)
     prompt_versions: dict[str, str] = Field(default_factory=dict)
     stations: list[StationResult] = Field(default_factory=list)
@@ -128,6 +133,11 @@ class RunRecord(BaseModel):
     violations: list[Violation] = Field(default_factory=list)
     usage: Usage = Field(default_factory=Usage)
     contract: CheckResult | None = None
+    # Entities profile: the two fake-rules runs of the accepted (or last) test-writer attempt.
+    cheat_probes: list[CheckResult] = Field(default_factory=list)
+    # Entities profile: `docker compose up` of the generated project plus a round trip (None when
+    # the check did not run).
+    deploy: CheckResult | None = None
     incremental: IncrementalInfo | None = None
     error: str | None = None
 

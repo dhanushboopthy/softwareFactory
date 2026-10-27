@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import json
 import re
+import secrets
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from factory.config import FactoryConfig
 from factory.harness import sandbox
+from factory.harness.check_env import CheckEnv
 from factory.report.models import CheckResult
 
 CHECK_ORDER = ("ruff", "mypy", "bandit", "pytest", "schemathesis")
@@ -32,10 +36,22 @@ def _venv_python(project: Path) -> str:
     return str(project / ".venv" / "bin" / "python")
 
 
+def redact_cmd(cmd: Sequence[str]) -> list[str]:
+    """``cmd`` for a log: the value of an `-H "Authorization: ..."` header is never written."""
+    out: list[str] = []
+    previous = ""
+    for arg in cmd:
+        if previous in ("-H", "--header") and arg.lower().startswith("authorization:"):
+            arg = "Authorization: ***"
+        out.append(arg)
+        previous = arg
+    return out
+
+
 def _save_log(log_dir: Path, name: str, res: sandbox.CommandResult) -> str:
     log_dir.mkdir(parents=True, exist_ok=True)
     path = log_dir / f"{name}.log"
-    header = f"$ {' '.join(res.cmd)}\n[exit {res.returncode}, {res.duration_s}s]"
+    header = f"$ {' '.join(redact_cmd(res.cmd))}\n[exit {res.returncode}, {res.duration_s}s]"
     path.write_text(f"{header}\n\n{res.output}\n")
     return str(path)
 
@@ -179,16 +195,22 @@ def parse_junit(xml_text: str) -> tuple[dict[str, int], list[str]]:
 def run_pytest(
     project: Path, cfg: FactoryConfig, log_dir: Path, name: str = "pytest",
     extra_args: Iterable[str] = (), python: Path | None = None,
+    env: Mapping[str, str] | None = None, test_paths: Sequence[str] = (),
 ) -> CheckResult:
-    """Run the suite in ``project``; ``python`` lets a copied project reuse the original venv."""
+    """Run the suite in ``project``; ``python`` lets a copied project reuse the original venv.
+
+    ``env`` is added to the scrubbed environment (DATABASE_URL and friends under the entities
+    profile). ``test_paths`` limits the run to those files: the gates use it so that generated
+    tests, which always fail against stubs, cannot make a weak writer suite look good (R4).
+    """
     junit = log_dir / f"{name}.junit.xml"
     log_dir.mkdir(parents=True, exist_ok=True)
     junit.unlink(missing_ok=True)
     interpreter = str(python) if python else _venv_python(project)
     res = sandbox.run(
         [interpreter, "-m", "pytest", "-q", "--tb=short", "-p", "no:cacheprovider",
-         f"--junitxml={junit}", *extra_args],
-        cwd=project, timeout_s=cfg.command_timeout_s,
+         f"--junitxml={junit}", *extra_args, *test_paths],
+        cwd=project, timeout_s=cfg.command_timeout_s, env=env,
     )
     if res.returncode == 5:
         return _result(name, res, log_dir, False, "no tests collected", ["no tests collected"])
@@ -208,11 +230,13 @@ def run_pytest(
     return result
 
 
-def collect_tests(project: Path, cfg: FactoryConfig, log_dir: Path) -> CheckResult:
+def collect_tests(
+    project: Path, cfg: FactoryConfig, log_dir: Path, env: Mapping[str, str] | None = None,
+) -> CheckResult:
     """Collection only: proves tests import and parse, without running them."""
     res = sandbox.run(
         [_venv_python(project), "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider"],
-        cwd=project, timeout_s=cfg.command_timeout_s,
+        cwd=project, timeout_s=cfg.command_timeout_s, env=env,
     )
     ids = [ln for ln in res.stdout.splitlines() if "::" in ln]
     passed = res.returncode == 0 and bool(ids)
@@ -261,36 +285,72 @@ def summarise_schemathesis_json(data: dict[str, Any]) -> tuple[str, dict[str, ob
     return summary, details
 
 
+def schemathesis_cmd(
+    spec: Path, url: str, cfg: FactoryConfig, report_path: Path, auth_header: str | None = None,
+) -> list[str]:
+    """The `st run` command line. ``auth_header`` is the full value of an Authorization header."""
+    cmd = [_tool("st"), "run", str(spec), "--url", url,
+           "--checks", cfg.schemathesis_checks,
+           "--max-examples", str(cfg.schemathesis_max_examples),
+           "--seed", str(cfg.schemathesis_seed),
+           "--workers", "1",
+           "--report", "json", "--report-json-path", str(report_path),
+           "--no-color"]
+    if auth_header is not None:
+        cmd += ["-H", f"Authorization: {auth_header}"]
+    return cmd
+
+
+def signup_token(base_url: str) -> str:
+    """Create a throwaway user through the API and return its bearer token (v2 contract tests)."""
+    credentials = {"email": f"contract-{secrets.token_hex(6)}@example.com",
+                   "password": secrets.token_urlsafe(16)}
+    try:
+        signup = httpx.post(f"{base_url}/auth/signup", json=credentials, timeout=15)
+        login = httpx.post(f"{base_url}/auth/login", json=credentials, timeout=15)
+        token = login.json()["access_token"]
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        raise RuntimeError(f"could not sign up a contract-test user: {exc}") from exc
+    if signup.status_code != 201 or login.status_code != 200 or not isinstance(token, str):
+        raise RuntimeError("could not sign up a contract-test user: signup "
+                           f"{signup.status_code}, login {login.status_code}")
+    return token
+
+
 def run_schemathesis(
     project: Path, cfg: FactoryConfig, log_dir: Path, name: str = "schemathesis",
+    check_env: CheckEnv | None = None,
 ) -> CheckResult:
+    """Schemathesis against a live server. With ``check_env`` (entities profile) the server runs on
+    its own database cloned from the migrated template, and requests carry a signed-up user's
+    bearer token; without it, a fresh SQLite file and no auth (the OpenAPI profile)."""
     report_dir = log_dir / f"{name}-report"
     db = log_dir / f"{name}.db"
     db.unlink(missing_ok=True)
+    if check_env is None:
+        server_env = {"DATABASE_URL": f"sqlite:///{db}"}
+    else:
+        server_env = check_env.fresh_env(name)
     try:
         with sandbox.serve(
             project / ".venv/bin/python", project, log_dir / f"{name}-server.log",
-            env={"DATABASE_URL": f"sqlite:///{db}"},
-            start_timeout_s=cfg.server_start_timeout_s,
+            env=server_env, start_timeout_s=cfg.server_start_timeout_s,
+            health_path="/openapi.json" if check_env is None else "/health",
         ) as server:
+            auth = f"Bearer {signup_token(server.base_url)}" if check_env is not None else None
             # Run from a per-run working dir so Hypothesis/Schemathesis caches stay out of the
             # project; sharing it across iterations lets known failures replay first.
             st_home = log_dir.parent / ".schemathesis-home"
             st_home.mkdir(parents=True, exist_ok=True)
             res = sandbox.run(
-                [_tool("st"), "run", str(project / "openapi.yaml"), "--url", server.base_url,
-                 "--checks", cfg.schemathesis_checks,
-                 "--max-examples", str(cfg.schemathesis_max_examples),
-                 "--seed", str(cfg.schemathesis_seed),
-                 "--workers", "1",
-                 "--report", "json", "--report-json-path", str(report_dir / "report.json"),
-                 "--no-color"],
+                schemathesis_cmd(project / "openapi.yaml", server.base_url, cfg,
+                                 report_dir / "report.json", auth),
                 cwd=st_home, timeout_s=cfg.command_timeout_s * 3,
             )
     except (RuntimeError, TimeoutError) as exc:
         server_log = log_dir / f"{name}-server.log"
         tail = server_log.read_text()[-3000:] if server_log.exists() else ""
-        return CheckResult(name=name, passed=False, summary="server failed to start",
+        return CheckResult(name=name, passed=False, summary="server or auth setup failed",
                            failures=[f"{exc}\n{tail}"])
     failures = parse_schemathesis_text(res.stdout)
     report = report_dir / "report.json"
@@ -309,15 +369,19 @@ def run_schemathesis(
 # --- aggregation -----------------------------------------------------------------------------
 
 
-def run_all(project: Path, cfg: FactoryConfig, log_dir: Path) -> list[CheckResult]:
+def run_all(
+    project: Path, cfg: FactoryConfig, log_dir: Path, check_env: CheckEnv | None = None,
+) -> list[CheckResult]:
     """Static checks + tests; Schemathesis only runs once the behaviour tests pass (it is slow
-    and its findings are noise while basic behaviour is still broken)."""
+    and its findings are noise while basic behaviour is still broken). Under the entities profile
+    (``check_env``) pytest and Schemathesis each get their own cloned database."""
     results = [run_ruff(project, cfg, log_dir), run_mypy(project, cfg, log_dir),
                run_bandit(project, cfg, log_dir)]
-    pytest_result = run_pytest(project, cfg, log_dir)
+    pytest_result = run_pytest(
+        project, cfg, log_dir, env=check_env.fresh_env("pytest") if check_env else None)
     results.append(pytest_result)
     if pytest_result.passed:
-        results.append(run_schemathesis(project, cfg, log_dir))
+        results.append(run_schemathesis(project, cfg, log_dir, check_env=check_env))
     else:
         results.append(CheckResult(name="schemathesis", passed=False, skipped=True,
                                    summary="skipped until pytest passes"))

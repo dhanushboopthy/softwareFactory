@@ -1,0 +1,45 @@
+# Scripted agent run for examples/tasks/entities.yaml. Exercises, in order:
+#   test writer: tries to read the rule hooks (blocked), writes a one-sided suite (rejected by the
+#                "always reject" cheat probe), then a complete suite after the harness feedback;
+#   coder:       tries to edit a generated test and a generated CRUD module (both blocked), ships a
+#                project limit that is off by one, then fixes it after the pytest failure.
+# `expect` asserts that the harness really sent that feedback to the "model".
+agents:
+  test_writer:
+    # attempt 1
+    - tool_calls:
+        - name: read_file
+          args: {path: app/rules/project.py}
+        - name: list_files
+          args: {directory: tests}
+    - tool_calls:
+        - name: write_file
+          args: {path: tests/test_project.py, content_file: files/test_project_reject_only.py}
+    - text: Wrote tests/test_project.py.
+    # attempt 2: must have received the cheat-probe feedback
+    - expect: ["cheat_always_reject", "NOT caught", "valid input must be accepted"]
+      tool_calls:
+        - name: write_file
+          args: {path: tests/test_project.py, content_file: files/test_project.py}
+    - text: Rewrote the suite to check both sides of every rule.
+  coder:
+    # iteration 1: the unimplemented hooks make the writer's tests fail
+    - expect: ["test_the_21st_active_project_is_rejected"]
+      tool_calls:
+        - name: write_file
+          args:
+            path: tests/generated/test_generated_project.py
+            content: "def test_nothing() -> None:\n    pass\n"
+        - name: write_file
+          args:
+            path: app/crud/project.py
+            content: "def get(*args, **kwargs):\n    return None\n"
+        - name: write_file
+          args: {path: app/rules/project.py, content_file: files/rules_project_buggy.py}
+    - text: Implemented the project rules.
+    # iteration 2: must have received the failing limit test
+    - expect: ["test_the_21st_active_project_is_rejected"]
+      tool_calls:
+        - name: write_file
+          args: {path: app/rules/project.py, content_file: files/rules_project.py}
+    - text: The limit now rejects the 21st active project.

@@ -1,0 +1,200 @@
+{% extends "base.html.j2" %}
+{% block title %}{{ r.run_id }} · API Factory{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+
+<section class="panel">
+  <h2>{{ r.spec_name }} <span class="muted">· {{ r.run_id }}</span></h2>
+  <p>
+    <span class="chip {{ status_class }}">{{ status_label }}</span>
+{% if r.status_reason %}
+    <span class="muted">{{ r.status_reason }}</span>
+{% endif %}
+  </p>
+{% if stalled %}
+  <p class="hint">No update for a long time: this run may have crashed.</p>
+{% endif %}
+{% if job and job.running %}
+  <form method="post" action="/runs/{{ r.run_id }}/cancel" class="inline">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+{% if job.cancelling %}
+    <span class="chip warn">cancelling</span>
+    <span class="muted">stopping the build and cleaning up (Postgres, containers)…</span>
+{% if force_offered %}
+    <input type="hidden" name="force" value="1">
+    <button type="submit" class="danger">Force stop (may leave containers behind)</button>
+{% endif %}
+{% else %}
+    <button type="submit" class="danger">Cancel build</button>
+{% endif %}
+  </form>
+{% endif %}
+  <table class="facts">
+    <tr><th>Input</th><td>{{ 'entities file' if r.profile == 'entities' else 'OpenAPI spec' }}
+{% if r.approved is not none %}
+        · approved: {{ 'yes' if r.approved else 'NO' }}
+{% endif %}
+        · <span class="muted">sha256 {{ r.spec_sha256[:12] }}</span></td></tr>
+    <tr><th>Model</th><td>{{ r.provider }} / {{ r.model }}</td></tr>
+    <tr><th>Started</th><td>{{ started }} · {{ duration }}</td></tr>
+    <tr><th>LLM usage</th><td>{{ r.usage.llm_calls }} calls · {{ r.usage.input_tokens }} in /
+        {{ r.usage.output_tokens }} out tokens · {{ cost }}</td></tr>
+    <tr><th>Guardrail violations</th><td>{{ r.violations | length }}</td></tr>
+  </table>
+{% for label, used, limit, text in bars %}
+  <p class="bar"><span>{{ label }}</span>
+     <progress max="{{ limit }}" value="{{ used }}"></progress> <span class="muted">{{ text }}</span></p>
+{% endfor %}
+{% if r.error %}
+  <pre class="bad-box">{{ r.error }}</pre>
+{% endif %}
+</section>
+
+<section class="panel">
+  <h2>Stations</h2>
+  <table>
+    <thead><tr><th>Station</th><th>Status</th><th>Detail</th></tr></thead>
+    <tbody>
+{% for s, css, label in stations %}
+      <tr><td>{{ s.name }}</td><td><span class="chip {{ css }}">{{ label }}</span></td>
+          <td class="muted">{{ s.detail | truncate(240) }}</td></tr>
+{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if r.iterations %}
+<section class="panel">
+  <h2>Agent iterations</h2>
+{% for it in r.iterations %}
+  <details{% if loop.last and active %} open{% endif %}>
+    <summary>
+      <strong>{{ it.agent }} #{{ it.index }}</strong>
+      <span class="chip {{ 'ok' if it.all_passed else ('warn' if it.rejected else 'bad') }}">
+        {{ 'all checks passed' if it.all_passed else ('rejected' if it.rejected else 'checks failed') }}</span>
+      <span class="muted">{{ it.tool_calls }} tool calls · +{{ it.lines_added }}/−{{ it.lines_removed }} lines
+        · {{ it.violations | length }} violation(s)</span>
+    </summary>
+{% if it.rejected %}
+    <p class="hint">Rejected: {{ it.reject_reason }}</p>
+{% endif %}
+    <p>
+{% for c, css, label in iteration_checks[loop.index0] %}
+      <span class="chip {{ css }}" title="{{ c.summary }}">{{ c.name }}: {{ label }}</span>
+{% endfor %}
+    </p>
+{% if it.agent_message %}
+    <p class="muted">{{ it.agent_message }}</p>
+{% endif %}
+{% if it.diff_path %}
+    <p><a href="/runs/{{ r.run_id }}/files/{{ it.diff_path }}">view the diff</a></p>
+{% endif %}
+{% for v in it.violations %}
+    <p class="hint">violation <code>{{ v.rule }}</code>{% if v.path %} on <code>{{ v.path }}</code>{% endif %}: {{ v.detail }}</p>
+{% endfor %}
+{% if it.failure_summary %}
+    <details class="nested"><summary>Failures fed to the next iteration</summary>
+      <pre>{{ it.failure_summary }}</pre></details>
+{% endif %}
+  </details>
+{% endfor %}
+</section>
+{% endif %}
+
+{% if r.profile == 'entities' %}
+<section class="panel">
+  <h2>Anti-cheating probes</h2>
+{% if r.cheat_probes %}
+  <p class="muted">The test writer's suite must fail against a rule set that never rejects and
+     against one that rejects everything a rule can reject.</p>
+  <table>
+    <tbody>
+{% for p in r.cheat_probes %}
+      <tr><td><code>{{ p.name }}</code></td>
+          <td><span class="chip {{ 'ok' if p.passed else 'bad' }}">{{ 'caught' if p.passed else 'NOT caught' }}</span></td>
+          <td class="muted">{{ p.summary }}</td></tr>
+{% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="muted">Not run (the test writer was skipped or never reached the probes).</p>
+{% endif %}
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Contract tests (Schemathesis)</h2>
+{% if r.contract %}
+  <p><span class="chip {{ 'ok' if r.contract.passed else 'bad' }}">{{ 'pass' if r.contract.passed else 'fail' }}</span>
+     {{ r.contract.summary }}</p>
+{% for f in r.contract.failures[:5] %}
+  <pre>{{ f }}</pre>
+{% endfor %}
+{% else %}
+  <p class="muted">Not run yet.</p>
+{% endif %}
+</section>
+
+{% if r.profile == 'entities' %}
+<section class="panel">
+  <h2>Deploy check (docker compose)</h2>
+{% if r.deploy %}
+  <p><span class="chip {{ 'ok' if r.deploy.passed else 'bad' }}">{{ 'pass' if r.deploy.passed else 'fail' }}</span>
+     {{ r.deploy.summary }}</p>
+{% for f in r.deploy.failures[:3] %}
+  <pre>{{ f }}</pre>
+{% endfor %}
+{% else %}
+  <p class="muted">Not run.</p>
+{% endif %}
+</section>
+{% endif %}
+
+{% if r.violations %}
+<section class="panel">
+  <h2>Guardrail violations</h2>
+  <table>
+    <thead><tr><th>Agent</th><th>Iteration</th><th>Rule</th><th>Path</th><th>Detail</th></tr></thead>
+    <tbody>
+{% for v in r.violations %}
+      <tr><td>{{ v.agent }}</td><td>{{ v.iteration if v.iteration is not none else '—' }}</td>
+          <td><code>{{ v.rule }}</code></td><td>{{ v.path or '—' }}</td>
+          <td class="muted">{{ v.detail | truncate(200) }}</td></tr>
+{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if console is not none %}
+<section class="panel">
+  <h2>Console output</h2>
+  <pre>{{ console }}</pre>
+</section>
+{% endif %}
+
+<section class="panel">
+  <h2>Files</h2>
+  <ul class="plain">
+    <li><a href="/runs/{{ r.run_id }}/files">Browse the run's files</a>
+        <span class="muted">(project, diffs, check logs)</span></li>
+    <li><a href="/runs/{{ r.run_id }}/files/report.md">report.md</a></li>
+{% if has_project %}
+    <li><a href="/runs/{{ r.run_id }}/download/project">Download the generated project (zip)</a></li>
+{% endif %}
+{% if has_client %}
+    <li><a href="/runs/{{ r.run_id }}/download/client">Download the client SDK (zip)</a></li>
+{% endif %}
+{% if has_openapi %}
+    <li><a href="/runs/{{ r.run_id }}/download/openapi">Download openapi.yaml</a></li>
+{% endif %}
+  </ul>
+{% if r.prompt_versions %}
+  <p class="muted">Prompts used:
+{% for name, h in r.prompt_versions.items() %}
+    <code>{{ name }}</code> {{ h }}{% if not loop.last %},{% endif %}
+{% endfor %}
+  </p>
+{% endif %}
+</section>
+{% endblock %}

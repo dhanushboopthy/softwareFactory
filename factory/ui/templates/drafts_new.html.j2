@@ -1,0 +1,44 @@
+{% extends "base.html.j2" %}
+{% block title %}New draft · API Factory{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+{% if problems %}
+<div class="problems">
+  <strong>Cannot continue:</strong>
+  <ul>
+{% for p in problems %}
+    <li>{{ p }}</li>
+{% endfor %}
+  </ul>
+</div>
+{% endif %}
+<section class="panel">
+  <h2>Describe the app</h2>
+  <p class="muted">The AI drafts an entities file from your words and documents. You then read
+     and approve it before anything is built.</p>
+{% if not provider_ok %}
+  <p class="hint">No LLM provider is configured, so drafting is unavailable. You can still upload
+     an existing entities file to review below.</p>
+{% endif %}
+{% if busy %}
+  <p class="hint">Another draft is being written; wait for it to finish.</p>
+{% endif %}
+  <form method="post" action="/drafts" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="description">What should it do?</label>
+    <textarea id="description" name="description" rows="8">{{ description }}</textarea>
+    <label for="documents">Or add documents (.md, .txt)</label>
+    <input id="documents" name="documents" type="file" multiple>
+    <button type="submit">Draft it</button>
+  </form>
+</section>
+<section class="panel">
+  <h2>Or review a file you already have</h2>
+  <form method="post" action="/drafts" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="entities">Entities file (.yaml)</label>
+    <input id="entities" name="entities" type="file" accept=".yaml,.yml,text/yaml" required>
+    <button type="submit">Open for review</button>
+  </form>
+</section>
+{% endblock %}

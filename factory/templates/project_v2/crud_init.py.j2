@@ -1,0 +1,11 @@
+"""Persistence helpers shared by the per-entity modules. Generated; read-only for agents."""
+
+from enum import Enum
+from typing import Any
+
+
+def plain(values: dict[str, Any]) -> dict[str, Any]:
+    """Enum members become their plain values, which the database driver can store."""
+    return {
+        key: (value.value if isinstance(value, Enum) else value) for key, value in values.items()
+    }

@@ -102,6 +102,41 @@ def test_anthropic_fallbacks_only_for_supported_models() -> None:
     assert "fallbacks" not in req and "betas" not in req and "output_config" not in req
 
 
+def test_a_tool_less_request_sends_no_tools_key_to_anthropic() -> None:
+    from factory.llm.anthropic import build_request
+
+    kwargs: dict[str, Any] = {"model": "claude-opus-5-5", "system": "s", "messages": [],
+                              "max_tokens": 10, "effort": None, "fallbacks": False}
+    assert "tools" not in build_request(tools=[], **kwargs)
+    assert [t["name"] for t in build_request(tools=TOOLS, **kwargs)["tools"]] == [
+        "read_file", "list_files", "write_file"]
+
+
+OPENAI_TEXT_RESPONSE = {
+    "id": "c2", "object": "chat.completion", "created": 0, "model": "gpt",
+    "choices": [{"index": 0, "finish_reason": "stop",
+                 "message": {"role": "assistant", "content": "app: x"}}],
+    "usage": {"prompt_tokens": 10, "completion_tokens": 2, "total_tokens": 12},
+}
+
+
+def test_a_tool_less_request_sends_no_tools_key_to_openai() -> None:
+    requests: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(200, json=OPENAI_TEXT_RESPONSE)
+
+    provider = OpenAICompatProvider(name="openai", model="gpt", api_key="k", base_url=None)
+    provider.client = openai.OpenAI(
+        api_key="k", max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
+    reply = provider.complete(system="s", messages=[UserMessage("go")], tools=(),
+                              agent="spec_writer", max_tokens=100)
+    assert reply.text == "app: x" and reply.stop_reason == "end_turn"
+    assert "tools" not in json.loads(requests[0].content)
+
+
 OPENAI_RESPONSE = {
     "id": "c1", "object": "chat.completion", "created": 0, "model": "deepseek-chat",
     "choices": [{"index": 0, "finish_reason": "tool_calls", "message": {

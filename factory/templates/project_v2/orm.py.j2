@@ -1,0 +1,40 @@
+"""SQLAlchemy models. Generated from entities.yaml by API Factory; read-only for agents.
+
+The schema comes only from the approved entities file. To change a table or column, change
+entities.yaml and get it approved again; never edit this file or write DDL.
+"""
+
+{% if datetime_imports %}
+from datetime import {{ datetime_imports | join(", ") }}
+
+{% endif %}
+from sqlalchemy import {{ sa_imports | join(", ") }}
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+{% for e in entities %}
+
+
+class {{ e.name }}(Base):
+    __tablename__ = {{ e.table | tojson }}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+{% for fk in e.foreign_keys %}
+    {{ fk.column }}: Mapped[int] = mapped_column(
+        Integer, ForeignKey("{{ fk.target_table }}.id", ondelete="CASCADE"), index=True
+    )
+{% endfor %}
+{% for c in e.columns %}
+    {{ c.name }}: Mapped[{{ c.py_type }}{{ " | None" if c.nullable else "" }}] = {{ c.decl }}
+{% endfor %}
+{% endfor %}

@@ -1,0 +1,22 @@
+"""Runtime settings, read from the environment once at import. Generated; read-only for agents.
+
+DATABASE_URL and JWT_SECRET have no defaults on purpose: a missing value stops the app at startup
+instead of silently running with a known secret.
+"""
+
+import os
+
+
+def _required(name: str) -> str:
+    value = os.environ.get(name, "")
+    if not value:
+        raise RuntimeError(f"{name} is not set; copy .env.example to .env and set it")
+    return value
+
+
+DATABASE_URL = _required("DATABASE_URL")
+JWT_SECRET = _required("JWT_SECRET")
+JWT_ALGORITHM = "HS256"
+TOKEN_TTL_MINUTES = int(os.environ.get("TOKEN_TTL_MINUTES", "60"))
+# PBKDF2 iterations. The test harness lowers this so hashing does not dominate test time.
+PASSWORD_HASH_ITERATIONS = int(os.environ.get("PASSWORD_HASH_ITERATIONS", "600000"))

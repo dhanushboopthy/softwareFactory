@@ -11,10 +11,12 @@ import hashlib
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from jinja2 import Environment, PackageLoader, StrictUndefined
 
 from factory.config import FactoryConfig
+from factory.entities import EntitiesDoc, route_of
 from factory.harness.guardrails import Guardrails, Role, matches
 
 _loader = PackageLoader("factory", "templates/prompts")
@@ -41,6 +43,11 @@ def template_hash(name: str) -> str:
 
 def _render(name: str, **ctx: object) -> tuple[str, str]:
     return _env.get_template(name).render(**ctx).strip() + "\n", template_hash(name)
+
+
+def render_prompt(name: str, **ctx: object) -> tuple[str, str]:
+    """Render prompt template ``name``; returns (text, template hash for the run report)."""
+    return _render(name, **ctx)
 
 
 def file_tree(project: Path, cfg: FactoryConfig) -> str:
@@ -82,6 +89,20 @@ def _read(project: Path, rel: str) -> str:
 
 CODER_FILES = ("app/**/*.py", "tests/*.py")
 TEST_WRITER_FILES = ("app/models.py", "tests/*.py")
+# Entities profile: the coder also sees the generated tests; the writer sees conftest and the
+# generated tests but never app/rules/ (the guardrails hide it).
+CODER_FILES_V2 = ("app/**/*.py", "tests/*.py", "tests/generated/*.py")
+TEST_WRITER_FILES_V2 = ("app/models.py", "tests/*.py", "tests/generated/*.py")
+
+
+def llm_work(doc: EntitiesDoc) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """The rules and actions the LLM agents are responsible for, as prompt-ready dicts."""
+    rules = [{"entity": entity, "id": rule.id, "text": rule.text, "status": rule.status,
+              "on": rule.on} for entity, rule in doc.all_rules()]
+    actions = [{"entity": name, "name": action,
+                "path": f"{route_of(doc, name).item}/{action}", "text": spec.text}
+               for name in doc.ordered() for action, spec in doc.entity(name).actions.items()]
+    return rules, actions
 
 
 def build_coder_context(
@@ -92,7 +113,24 @@ def build_coder_context(
     iteration: int,
     last_errors: str,
     spec_changes: Iterable[str] = (),
+    entities: EntitiesDoc | None = None,
 ) -> ContextBundle:
+    if cfg.profile == "entities":
+        rules, actions = llm_work(entities) if entities is not None else ([], [])
+        system, h_sys = _render("coder_v2.system.j2", writable=cfg.coder_writable,
+                                max_tool_calls=cfg.max_tool_calls_per_iter,
+                                max_lines=cfg.max_lines_changed_per_iter)
+        user, h_user = _render(
+            "coder_v2.user.j2",
+            iteration=iteration, max_iters=cfg.max_iters,
+            agents_md=_read(project, "AGENTS.md"),
+            entities_yaml=_read(project, "entities.yaml"),
+            tree=file_tree(project, cfg),
+            files=gather_files(project, CODER_FILES_V2, cfg, guard, Role.CODER),
+            last_errors=last_errors, rules=rules, actions=actions,
+        )
+        return ContextBundle(system, user, {"coder_v2.system.j2": h_sys,
+                                            "coder_v2.user.j2": h_user})
     system, h_sys = _render("coder.system.j2", writable=cfg.coder_writable,
                             max_tool_calls=cfg.max_tool_calls_per_iter,
                             max_lines=cfg.max_lines_changed_per_iter)
@@ -119,7 +157,23 @@ def build_test_writer_context(
     feedback: str,
     modules: Sequence[str],
     spec_changes: Iterable[str] = (),
+    entities: EntitiesDoc | None = None,
 ) -> ContextBundle:
+    if cfg.profile == "entities":
+        rules, actions = llm_work(entities) if entities is not None else ([], [])
+        system, h_sys = _render("test_writer_v2.system.j2", writable=cfg.test_writer_writable,
+                                max_tool_calls=cfg.max_tool_calls_per_iter)
+        user, h_user = _render(
+            "test_writer_v2.user.j2",
+            attempt=attempt, max_attempts=cfg.test_writer_max_attempts,
+            agents_md=_read(project, "AGENTS.md"),
+            entities_yaml=_read(project, "entities.yaml"),
+            spec=_read(project, "openapi.yaml"),
+            files=gather_files(project, TEST_WRITER_FILES_V2, cfg, guard, Role.TEST_WRITER),
+            modules=list(modules), feedback=feedback, rules=rules, actions=actions,
+        )
+        return ContextBundle(system, user, {"test_writer_v2.system.j2": h_sys,
+                                            "test_writer_v2.user.j2": h_user})
     system, h_sys = _render("test_writer.system.j2", writable=cfg.test_writer_writable,
                             max_tool_calls=cfg.max_tool_calls_per_iter)
     user, h_user = _render(

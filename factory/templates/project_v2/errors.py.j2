@@ -1,0 +1,25 @@
+"""Rule violations. Generated from entities.yaml by API Factory; read-only for agents.
+
+RULE_STATUS lists every rule, guard and transition declared in entities.yaml with the HTTP status
+it returns. A hook can only reject with one of these ids, so it can only produce a status the
+OpenAPI spec documents.
+"""
+
+RULE_STATUS: dict[str, int] = {
+{% for rule_id, status in rule_status.items() %}
+    {{ rule_id | tojson }}: {{ status }},
+{% endfor %}
+}
+
+
+class RuleViolation(Exception):
+    """Raise from a rules hook to reject the request with the status declared for ``rule``."""
+
+    def __init__(self, rule: str, message: str) -> None:
+        super().__init__(message)
+        self.rule = rule
+        self.message = message
+
+    @property
+    def status(self) -> int:
+        return RULE_STATUS[self.rule]

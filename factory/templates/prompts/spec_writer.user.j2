@@ -1,0 +1,25 @@
+Write the entities.yaml for the project described below. Attempt {{ attempt }} of {{ max_attempts }}.
+{% if errors %}
+
+## Your previous answer was invalid
+Your previous answer:
+
+```yaml
+{{ previous }}
+```
+
+The validator reported these problems. Fix every one of them and answer again with the complete corrected file:
+
+{% for e in errors %}
+- {{ e }}
+{% endfor %}
+{% endif %}
+
+## Documents
+{% for doc in documents %}
+
+### {{ doc.name }}
+````markdown
+{{ doc.text }}
+````
+{% endfor %}

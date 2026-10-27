@@ -1,0 +1,776 @@
+openapi: 3.1.0
+info:
+  title: Tasks
+  version: 1.0.0
+  description: Generated from the tasks entities file by API Factory.
+servers:
+- url: http://localhost:8000
+security:
+- bearerAuth: []
+paths:
+  /auth/signup:
+    post:
+      operationId: signup
+      tags:
+      - auth
+      security: []
+      summary: Create an account
+      description: Creates a user. Emails are unique; a second signup with the same email returns 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '201':
+          description: User created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '409':
+          description: Email already registered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /auth/login:
+    post:
+      operationId: login
+      tags:
+      - auth
+      security: []
+      summary: Get an access token
+      description: Exchanges email and password for a bearer token. Wrong credentials return 401.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          description: Wrong email or password.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /projects:
+    post:
+      operationId: createProject
+      tags:
+      - project
+      summary: Create a Project
+      description: 'Creates a Project, private to the user who owns it.
+
+        - rule project-limit: A user may have at most 20 non-archived projects; creating the 21st returns
+        409.'
+      parameters: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+      responses:
+        '201':
+          description: Project created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+          links:
+            GetProject:
+              operationId: getProject
+              parameters:
+                id: $response.body#/id
+            CreateTask:
+              operationId: createTask
+              parameters:
+                project_id: $response.body#/id
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 'rule project-limit: A user may have at most 20 non-archived projects; creating
+            the 21st returns 409.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listProjects
+      tags:
+      - project
+      summary: List projects
+      description: Lists projects private to the user who owns it, ordered by id, at most `limit` (1-100,
+        default 50) starting at `offset`.
+      parameters:
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 9223372036854775807
+          default: 0
+      responses:
+        '200':
+          description: The page of results.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags:
+      - project
+      summary: Get a Project
+      description: Returns one Project; 404 if it does not exist or the caller may not see it.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      responses:
+        '200':
+          description: The Project.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Project (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateProject
+      tags:
+      - project
+      summary: Update a Project
+      description: Changes the given fields of a Project; omitted fields keep their value.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdate'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Project (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteProject
+      tags:
+      - project
+      summary: Delete a Project
+      description: Deletes a Project and its Task.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Project (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /projects/{id}/archive:
+    post:
+      operationId: archiveProject
+      tags:
+      - project
+      summary: Archive a Project
+      description: 'Marks the project archived.
+
+        - rule already-archived: Archiving a project that is already archived returns 409.'
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      responses:
+        '200':
+          description: The Project after archive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Project (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 'rule already-archived: Archiving a project that is already archived returns 409.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /projects/{project_id}/tasks:
+    post:
+      operationId: createTask
+      tags:
+      - task
+      summary: Create a Task
+      description: 'Creates a Task, private to the user who owns it. It belongs to a Project; the Project
+        must exist and be visible to the caller, otherwise 404.
+
+        - guard archived-project-rejects-tasks: when parent.archived == true'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreate'
+      responses:
+        '201':
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+          links:
+            GetTask:
+              operationId: getTask
+              parameters:
+                id: $response.body#/id
+                project_id: $response.body#/project_id
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 'guard archived-project-rejects-tasks: when parent.archived == true'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    get:
+      operationId: listTasks
+      tags:
+      - task
+      summary: List tasks
+      description: Lists tasks private to the user who owns it, ordered by id, at most `limit` (1-100,
+        default 50) starting at `offset`. It belongs to a Project; the Project must exist and be visible
+        to the caller, otherwise 404.
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 50
+      - name: offset
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 9223372036854775807
+          default: 0
+      responses:
+        '200':
+          description: The page of results.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /projects/{project_id}/tasks/{id}:
+    get:
+      operationId: getTask
+      tags:
+      - task
+      summary: Get a Task
+      description: Returns one Task; 404 if it does not exist or the caller may not see it. It belongs
+        to a Project; the Project must exist and be visible to the caller, otherwise 404.
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      responses:
+        '200':
+          description: The Task.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: updateTask
+      tags:
+      - task
+      summary: Update a Task
+      description: 'Changes the given fields of a Task; omitted fields keep their value. It belongs to
+        a Project; the Project must exist and be visible to the caller, otherwise 404.
+
+        - status may only change by these moves: todo -> doing, doing -> done'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdate'
+      responses:
+        '200':
+          description: Updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: 'status may only change by these moves: todo -> doing, doing -> done'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deleteTask
+      tags:
+      - task
+      summary: Delete a Task
+      description: Deletes a Task. It belongs to a Project; the Project must exist and be visible to the
+        caller, otherwise 404.
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Task (or its parent) not found for this user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Invalid request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      description: Error response. `detail` is a message or a list of validation errors.
+      properties:
+        detail: {}
+      required:
+      - detail
+    Credentials:
+      type: object
+      additionalProperties: false
+      properties:
+        email:
+          type: string
+          minLength: 3
+          maxLength: 254
+          pattern: ^[^@\s\u0000]+@[^@\s\u0000]+$
+        password:
+          type: string
+          minLength: 8
+          maxLength: 128
+          pattern: ^[^\u0000]*$
+      required:
+      - email
+      - password
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+      required:
+      - id
+      - email
+    Token:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+          - bearer
+      required:
+      - access_token
+      - token_type
+    Project:
+      type: object
+      description: A project owned by the user who created it.
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        archived:
+          type: boolean
+          default: false
+      required:
+      - id
+      - name
+      - archived
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        archived:
+          type: boolean
+          default: false
+      required:
+      - name
+    ProjectUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        archived:
+          type: boolean
+    Task:
+      type: object
+      description: A unit of work inside a project.
+      properties:
+        id:
+          type: integer
+        project_id:
+          type: integer
+        title:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum:
+          - todo
+          - doing
+          - done
+          default: todo
+        due:
+          type:
+          - string
+          - 'null'
+          format: date
+      required:
+      - id
+      - project_id
+      - title
+      - status
+      - due
+    TaskCreate:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        due:
+          type:
+          - string
+          - 'null'
+          format: date
+      required:
+      - title
+    TaskUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+          pattern: ^[^\u0000]*$
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum:
+          - todo
+          - doing
+          - done
+        due:
+          type:
+          - string
+          - 'null'
+          format: date

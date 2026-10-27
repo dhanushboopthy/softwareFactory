@@ -101,8 +101,9 @@ class OpenAICompatProvider(LLMProvider):
         req: dict[str, Any] = {
             "model": self.model,
             "messages": to_native_messages(system, messages),
-            "tools": to_native_tools(tools),
         }
+        if tools:  # the API rejects an empty `tools` list
+            req["tools"] = to_native_tools(tools)
         if self.name == "deepseek":
             req["max_tokens"] = min(max_tokens, DEEPSEEK_MAX_OUTPUT)
         else:

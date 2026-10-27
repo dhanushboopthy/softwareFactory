@@ -20,6 +20,9 @@ dependencies = [
     # Harness check tools run against generated projects from the factory's environment.
     "ruff>=0.6",
     "bandit>=1.7",
+    "fastapi>=0.162.0",
+    "uvicorn>=0.54.0",
+    "python-multipart>=0.0.32",
 ]
 
 [project.scripts]
@@ -64,7 +67,10 @@ exclude = ["^runs/", "^tests/fixtures/"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["runs", ".venv", "fixtures"]
-markers = ["e2e: full factory builds (slow; needs uv and network for the first project sync)"]
+markers = [
+    "e2e: full factory builds (slow; needs uv and network for the first project sync)",
+    "eval: live-model checks (opt in with FACTORY_EVAL=1; calls a real model and costs money)",
+]
 
 # --- bandit ---------------------------------------------------------------
 [tool.bandit]

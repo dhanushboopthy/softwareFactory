@@ -66,12 +66,24 @@ def build(
         str | None, typer.Option(help="Explicit run id (default: timestamp).")
     ] = None,
 ) -> None:
-    """Lint, scaffold, test, implement, verify and package a backend from SPEC."""
+    """Lint, scaffold, test, implement, verify and package a backend from SPEC.
+
+    SPEC is an OpenAPI 3.x file, or an approved entities file (`approved: true`).
+    """
     from factory.llm import ProviderConfigError, get_provider
-    from factory.pipeline import BuildOptions, latest_passed_run
+    from factory.pipeline import (
+        INCREMENTAL_REFUSAL,
+        BuildOptions,
+        IncrementalNotSupported,
+        detect_profile,
+        latest_passed_run,
+    )
     from factory.pipeline import build as run_build
 
     cfg = FactoryConfig.from_env()
+    if detect_profile(spec) == "entities" and (from_run or incremental):
+        _log(INCREMENTAL_REFUSAL)
+        raise typer.Exit(code=2)
     previous = from_run
     if incremental and previous is None:
         previous = latest_passed_run(cfg, spec.name)
@@ -85,12 +97,111 @@ def build(
             _log(f"LLM provider not configured: {exc}\n"
                  "Set LLM_PROVIDER in .env, or pass --no-llm for the deterministic pipeline.")
             raise typer.Exit(code=2) from exc
-    record = run_build(
-        BuildOptions(spec_path=spec, use_llm=not no_llm, previous_run=previous, run_id=run_id),
-        cfg, provider, log=_log,
-    )
+    try:
+        record = run_build(
+            BuildOptions(spec_path=spec, use_llm=not no_llm, previous_run=previous,
+                         run_id=run_id),
+            cfg, provider, log=_log,
+        )
+    except IncrementalNotSupported as exc:  # also guards callers that skip the check above
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
     typer.echo(str(cfg.runs_dir / record.run_id / "report.md"))
-    raise typer.Exit(code=0 if record.status == "passed" else 1)
+    raise typer.Exit(code={"passed": 0, "cancelled": 130}.get(record.status, 1))
+
+
+@app.command()
+def draft(
+    docs: Annotated[
+        list[Path],
+        typer.Argument(exists=True, dir_okay=False, readable=True,
+                       help="The project description and design documents (text files)."),
+    ],
+    output: Annotated[
+        Path, typer.Option("--output", "-o", help="Where to write the draft entities.yaml.")
+    ],
+    force: Annotated[bool, typer.Option("--force", help="Overwrite OUTPUT if it exists.")] = False,
+) -> None:
+    """Draft an entities.yaml from documents, for a human to review and approve.
+
+    The draft is written with `approved: false`; `factory build` refuses it until you read it and
+    change that to `approved: true`.
+    """
+    from factory.llm import ProviderConfigError, get_provider
+    from factory.llm.base import LLMError
+    from factory.stations.spec_writer import DraftTooLarge
+    from factory.stations.spec_writer import draft as run_draft
+
+    if output.exists() and not force:
+        _log(f"{output} already exists; pass --force to overwrite it")
+        raise typer.Exit(code=2)
+    cfg = FactoryConfig.from_env()
+    try:
+        provider = get_provider()
+    except ProviderConfigError as exc:
+        _log(f"LLM provider not configured: {exc}\nSet LLM_PROVIDER in .env.")
+        raise typer.Exit(code=2) from exc
+    try:
+        result = run_draft(docs, output, cfg, provider, log=_log)
+    except (DraftTooLarge, ValueError) as exc:  # input problems; no model call was made
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
+    except LLMError as exc:
+        _log(f"LLM call failed: {exc}")
+        raise typer.Exit(code=1) from exc
+    cost = "n/a" if result.usage.cost_usd is None else f"${result.usage.cost_usd:.4f}"
+    _log(f"{result.attempts} attempt(s), {result.usage.input_tokens} in / "
+         f"{result.usage.output_tokens} out tokens, {cost}")
+    if result.path is None:
+        _log("no valid entities file after all attempts; the last problems were:")
+        for problem in result.errors:
+            _log(f"  - {problem}")
+        raise typer.Exit(code=1)
+    typer.echo(str(result.path))
+    if result.gaps:
+        _log("The description asks for things the format cannot express (see `gaps:`):")
+        for gap in result.gaps:
+            _log(f"  - {gap}")
+    _log("Review the file, then set `approved: true` and run `factory build`.")
+
+
+@app.command()
+def ui(
+    host: Annotated[str, typer.Option(help="Address to listen on.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option(help="Port to listen on.")] = 8765,
+    allow_remote: Annotated[
+        bool, typer.Option("--allow-remote", help="Listen beyond this machine (needs "
+                           "FACTORY_UI_TOKEN).")
+    ] = False,
+) -> None:
+    """Serve the web UI: review drafts, approve, start builds and watch runs.
+
+    It listens on this machine only. It can start builds that run generated code, so serving it
+    further needs --allow-remote and an access token in FACTORY_UI_TOKEN.
+    """
+    import os
+
+    import uvicorn
+
+    from factory.ui.app import create_app
+    from factory.ui.security import UiConfigError, UiSettings
+
+    extra_hosts = tuple(h.strip() for h in os.environ.get("FACTORY_UI_ALLOWED_HOSTS", "").split(",")
+                        if h.strip())
+    settings = UiSettings(cfg=FactoryConfig.from_env(), host=host, port=port,
+                          auth_token=os.environ.get("FACTORY_UI_TOKEN") or None,
+                          extra_hosts=extra_hosts)
+    if not settings.loopback and not allow_remote:
+        _log(f"{host} is not this machine only; pass --allow-remote (and set FACTORY_UI_TOKEN) "
+             "if you really mean to serve the UI there")
+        raise typer.Exit(code=2)
+    try:
+        application = create_app(settings)
+    except UiConfigError as exc:
+        _log(str(exc))
+        raise typer.Exit(code=2) from exc
+    typer.echo(f"API Factory UI: http://{host}:{port}/   (Ctrl-C to stop)")
+    uvicorn.run(application, host=host, port=port, log_level="warning")
 
 
 @app.command()

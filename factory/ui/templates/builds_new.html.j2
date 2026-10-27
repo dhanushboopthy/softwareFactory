@@ -1,0 +1,37 @@
+{% extends "base.html.j2" %}
+{% block title %}New build · API Factory{% endblock %}
+{% block content %}
+<p><a href="/">← all runs</a></p>
+<section class="panel">
+  <h2>New build</h2>
+{% if current %}
+  <p>A build is already running: <a href="/runs/{{ current.run_id }}">{{ current.run_id }}</a>.
+     Only one build runs at a time; wait for it to finish or cancel it.</p>
+{% else %}
+  <p>Upload an <strong>approved</strong> entities file (it must say <code>approved: true</code>,
+     which you set after reading a draft). The factory then generates the backend, runs the
+     agents and the checks, and you can watch it here.</p>
+{% for c in blockers %}
+  <p class="hint">{{ c.name }}: {{ c.detail }}. {{ c.hint }}</p>
+{% endfor %}
+{% if problems %}
+  <div class="problems">
+    <strong>This file cannot be built yet:</strong>
+    <ul>
+{% for p in problems %}
+      <li>{{ p }}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+  <form method="post" action="/builds" enctype="multipart/form-data">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label for="entities">Entities file (.yaml)</label>
+    <input id="entities" name="entities" type="file" accept=".yaml,.yml,text/yaml" required>
+    <label class="check"><input type="checkbox" name="no_llm"{% if no_llm %} checked{% endif %}>
+      Generate and check only (no AI agents; the unimplemented rules will make checks fail)</label>
+    <button type="submit">Start build</button>
+  </form>
+{% endif %}
+</section>
+{% endblock %}

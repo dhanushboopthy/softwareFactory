@@ -1,0 +1,71 @@
+"""Persistence for {{ e.name }}. Generated from entities.yaml by API Factory; read-only for agents.
+
+{% if e.parent %}
+Every query is scoped to the parent row that the route already loaded and checked, so a
+{{ e.name }} is only reachable through a {{ e.parent }} the caller may see.
+{% elif e.owner == "user" %}
+Every query filters on owner_id, so a user can never reach another user's rows: they get 404.
+{% else %}
+{{ e.name }} rows are shared: any signed-in user may read and write them.
+{% endif %}
+"""
+
+from fastapi import HTTPException
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app import models, orm
+from app.crud import plain
+
+
+def get(session: Session, {{ scope_param }}, id: int) -> orm.{{ e.name }}:
+    stmt = select(orm.{{ e.name }}).where(orm.{{ e.name }}.id == id{{ scope_filter_suffix }})
+    row = session.scalar(stmt)
+    if row is None:
+        raise HTTPException(status_code=404, detail="{{ e.name }} not found")
+    return row
+
+
+def list_(session: Session, {{ scope_param }}, limit: int, offset: int) -> list[orm.{{ e.name }}]:
+    stmt = (
+        select(orm.{{ e.name }})
+{% if scope_filter %}
+        .where({{ scope_filter }})
+{% endif %}
+        .order_by(orm.{{ e.name }}.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return list(session.scalars(stmt))
+
+
+def create(session: Session, {{ scope_param }}, data: models.{{ e.name }}Create) -> orm.{{ e.name }}:
+    row = orm.{{ e.name }}({{ scope_create_arg }}**plain(data.model_dump()))
+    session.add(row)
+    session.flush()
+    return row
+
+
+def update(session: Session, row: orm.{{ e.name }}, data: models.{{ e.name }}Update) -> None:
+    for key, value in plain(data.model_dump(exclude_unset=True)).items():
+        setattr(row, key, value)
+    session.flush()
+
+
+def delete(session: Session, row: orm.{{ e.name }}) -> None:
+    session.delete(row)
+    session.flush()
+
+
+def to_model(row: orm.{{ e.name }}) -> models.{{ e.name }}:
+    return models.{{ e.name }}.model_validate(
+        {
+            "id": row.id,
+{% if e.parent %}
+            "{{ parent_fk }}": row.{{ parent_fk }},
+{% endif %}
+{% for c in e.columns %}
+            "{{ c.name }}": row.{{ c.name }},
+{% endfor %}
+        }
+    )

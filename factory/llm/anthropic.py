@@ -70,10 +70,11 @@ def build_request(
         "max_tokens": max_tokens,
         "system": system,
         "messages": to_native_messages(messages),
-        "tools": to_native_tools(tools),
         # Auto-caching: the growing conversation prefix is reused across tool-call turns.
         "cache_control": {"type": "ephemeral"},
     }
+    if tools:  # a tool-less call (factory draft) sends no `tools` key at all
+        req["tools"] = to_native_tools(tools)
     if effort:
         req["output_config"] = {"effort": effort}
     if fallbacks and model in FALLBACK_MODELS:

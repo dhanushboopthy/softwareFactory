@@ -1,0 +1,44 @@
+Attempt {{ attempt }} of {{ max_attempts }}. Write the tests for these entities: {{ modules | join(", ") }}.
+
+## Rules to test
+{% for r in rules %}
+- `{{ r.id }}` — declared on {{ r.entity }}, applies to {{ r.on | join(", ") }}, rejects with status {{ r.status }}: {{ r.text }}
+{% else %}
+(none)
+{% endfor %}
+
+## Actions to test
+{% for a in actions %}
+- `{{ a.entity }}.{{ a.name }}` — `POST {{ a.path }}`{% if a.text %}: {{ a.text }}{% endif %}
+
+{% else %}
+(none)
+{% endfor %}
+{% if feedback %}
+
+## Your previous attempt was rejected by the harness
+```
+{{ feedback }}
+```
+{% endif %}
+
+## AGENTS.md
+{{ agents_md }}
+
+## entities.yaml
+```yaml
+{{ entities_yaml }}
+```
+
+## openapi.yaml
+```yaml
+{{ spec }}
+```
+
+{% for path, content in files.items() %}
+### {{ path }}
+```python
+{{ content }}
+```
+
+{% endfor %}

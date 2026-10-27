@@ -1,0 +1,33 @@
+"""Business rules for {{ e.name }}: the only code written by the coder agent.
+
+The generated routes call these functions; they do everything else (authentication, ownership,
+loading rows, guards, transitions, the database write). Keep every function and its signature.
+To reject a request, `raise RuleViolation("<rule id>", "message")` with an id listed in a docstring
+below (`from app.errors import RuleViolation`); the status code comes from entities.yaml.
+"""
+
+from sqlalchemy.orm import Session
+
+from app import models, orm
+{% for h in e.hooks %}
+
+
+def {{ h.name }}({{ h.params }}) -> {{ h.returns }}:
+    """{{ h.summary | wordwrap(88, break_long_words=False) | indent(4) }}
+{% if h.rules %}
+
+    Rules to enforce here:
+{% for r in h.rules %}
+    - {{ r.id }} (status {{ r.status }}): {{ r.text | wordwrap(50, break_long_words=False) | indent(6) }}
+{% endfor %}
+{% elif not h.is_action %}
+
+    No rule applies to this operation, so there is nothing to do.
+{% endif %}
+    """
+{% if h.not_implemented %}
+    raise NotImplementedError({{ (e.table ~ "." ~ h.name) | tojson }})
+{% else %}
+    return None
+{% endif %}
+{% endfor %}
